@@ -1,5 +1,45 @@
-The server code for my bachelor thesis.
+# weBIGeo Cloud Server
+
+Preprocessing server for real-time volumetric cloud rendering in the browser. Developed by **Wendelin Muth** as part of his bachelor thesis at TU Wien.
+
+> [Real-Time Volumetric Rendering of Meteorological Cloud Data](https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/)
+> Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026
+> Supervisor: Manuela Waldner
+
+This server is built for the [weBIGeo](https://github.com/weBIGeo/webigeo) web-based geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into compressed tile hierarchies, and serves them for WebGPU-based ray-marching cloud rendering.
+
+## Setup
+
+### using CONDA
+
+> **Note:** I ran into issues installing `cfgrib` via pip on Windows because it depends on the native ecCodes C library, which pip didnt seem to properly provide on Windows (at least not for a venv). Installing `eccodes` and `cfgrib` through conda-forge (as above) resolved this.
+
+```bash
+conda create -n clouds python=3.11
+conda activate clouds
+conda install -c conda-forge eccodes cfgrib
+pip install -r requirements.txt
+```
+
+
+
+### no virtual environment
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
-1. Install the requirements with `python -m pip -r requirements.txt`
-2. Run the server with `python server.py`
+
+```bash
+python server.py
+```
+
+Available flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `8000` | Port to listen on |
+| `--dir` | `tiles_output` | Directory for generated tiles |
+| `--clean` | off | Delete tile data outside the history window |
+| `--readonly` | off | Disable tile generation, serve existing data only |
+| `--keep-gribs` | off | Keep downloaded GRIB2 files after processing |
