@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import threading
 import queue
-import argparse
 import re
 import time
 import config
@@ -26,7 +25,6 @@ active_tasks = set()
 processing_lock = threading.Lock()
 task_progress = {}
 
-SERVER_ARGS = {}
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
@@ -154,12 +152,12 @@ def get_best_run_and_step(target_time):
 
 def get_folder_path(run_time, step):
     folder_name = f"{run_time.strftime('%Y%m%d%H')}_{step:03d}"
-    return os.path.join(SERVER_ARGS["dir"], folder_name), folder_name
+    return os.path.join(os.path.abspath(config.output_dir), folder_name), folder_name
 
 
 def scan_existing_folders():
     results = {}
-    base_dir = SERVER_ARGS["dir"]
+    base_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(base_dir):
         return results
 
@@ -189,13 +187,10 @@ def scan_existing_folders():
 
 
 def cleanup_old_data():
-    if not SERVER_ARGS["clean"]:
-        return
-
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=HISTORY_WINDOW)
 
     folders = []
-    base_dir = SERVER_ARGS["dir"]
+    base_dir = os.path.abspath(config.output_dir)
     if os.path.exists(base_dir):
         folders = [
             f
@@ -254,7 +249,7 @@ def worker_loop():
         cleanup_old_data()
 
         folder_name = f"{run_str}_{step:03d}"
-        output_dir = os.path.join(SERVER_ARGS["dir"], folder_name)
+        output_dir = os.path.join(os.path.abspath(config.output_dir), folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
         log_path = os.path.join(output_dir, "latest.log")
@@ -270,7 +265,7 @@ def worker_loop():
             output_dir,
         ]
 
-        if SERVER_ARGS["keep-gribs"]:
+        if config.keep_gribs:
             cmd.append("--keep-gribs")
 
         with processing_lock:
@@ -319,7 +314,7 @@ def worker_loop():
         # Remove any stale folders for the same target time
         if success:
             target_dt = run_dt + timedelta(hours=step)
-            base_dir = SERVER_ARGS["dir"]
+            base_dir = os.path.abspath(config.output_dir)
             for name in os.listdir(base_dir):
                 if name == folder_name:
                     continue
@@ -408,13 +403,7 @@ def get_status():
         status = get_slot_status(target_time)
         return jsonify(status)
 
-    if SERVER_ARGS["clean"]:
-        return (
-            jsonify({"status": "error", "message": "Time is outside history window"}),
-            404,
-        )
-
-    # If NOT in clean mode, check the disk for historical data.
+    # Outside the live window — check disk for historical data.
     time_id = target_time.strftime("%Y%m%d%H")
     disk_state = scan_existing_folders()
     entry = disk_state.get(time_id)
@@ -440,12 +429,6 @@ def generate_request():
     time_str = request.args.get("time")
     if not time_str:
         return jsonify({"error": "Missing time"}), 400
-
-    if SERVER_ARGS["readonly"]:
-        return (
-            jsonify({"status": "error", "message": "Server is in read-only mode"}),
-            403,
-        )
 
     try:
         target_time = datetime.strptime(time_str, "%Y%m%d%H")
@@ -491,20 +474,17 @@ def list_available():
         processed_ids.add(slot_info["id"])
         curr += timedelta(hours=1)
 
-    if not SERVER_ARGS["clean"]:
-        disk_state = scan_existing_folders()
-
-        for time_id, entry in disk_state.items():
-            # Add only if it wasn't already processed and is marked as ready
-            if time_id not in processed_ids and entry["ready"]:
-                slot_data = {
-                    "id": time_id,
-                    "status": "ready",
-                    "path": f"/{entry['folder']}/",
-                    "run": entry["run"].strftime("%Y%m%d%H"),
-                    "step": entry["step"],
-                }
-                valid_slots.append(slot_data)
+    disk_state = scan_existing_folders()
+    for time_id, entry in disk_state.items():
+        if time_id not in processed_ids and entry["ready"]:
+            slot_data = {
+                "id": time_id,
+                "status": "ready",
+                "path": f"/{entry['folder']}/",
+                "run": entry["run"].strftime("%Y%m%d%H"),
+                "step": entry["step"],
+            }
+            valid_slots.append(slot_data)
 
     valid_slots.sort(key=lambda x: x["id"])
 
@@ -529,7 +509,7 @@ def serve_tiles(filename):
 
         # We send from the specific run_step folder
         return send_from_directory(
-            os.path.join(SERVER_ARGS["dir"], folder), real_filename
+            os.path.join(os.path.abspath(config.output_dir), folder), real_filename
         )
 
     # 2. Shadow Route
@@ -538,7 +518,7 @@ def serve_tiles(filename):
     if shadow_match:
         folder = shadow_match.group(1)
         return send_from_directory(
-            os.path.join(SERVER_ARGS["dir"], folder), "shadow.ktx2"
+            os.path.join(os.path.abspath(config.output_dir), folder), "shadow.ktx2"
         )
 
     return ("Forbidden", 403)
@@ -546,9 +526,6 @@ def serve_tiles(filename):
 
 def auto_build_all():
     """Queue generation for every available DWD slot that is not yet ready on disk."""
-    if SERVER_ARGS.get("readonly"):
-        return
-
     now = datetime.now(timezone.utc).replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
     start = now - timedelta(hours=HISTORY_WINDOW)
     end = now + timedelta(hours=MAX_FORECAST_STEP)
@@ -594,7 +571,7 @@ def archive_old_data():
     whose target hour is in archive_keep_hours."""
     threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=config.archive_threshold_days)
     keep_hours = set(config.archive_keep_hours)
-    base_dir = SERVER_ARGS.get("dir", "tiles_output")
+    base_dir = os.path.abspath(config.output_dir)
 
     if not os.path.exists(base_dir):
         return
@@ -656,25 +633,11 @@ def scheduler_loop():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", type=str, default="tiles_output")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--clean", action="store_true")
-    parser.add_argument("--readonly", action="store_true")
-    parser.add_argument("--keep-gribs", action="store_true")
+    output_dir = os.path.abspath(config.output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    args = parser.parse_args()
-    SERVER_ARGS["dir"] = os.path.abspath(args.dir)
-    SERVER_ARGS["clean"] = args.clean
-    SERVER_ARGS["readonly"] = args.readonly
-    SERVER_ARGS["keep-gribs"] = args.keep_gribs
-
-    if not os.path.exists(SERVER_ARGS["dir"]):
-        os.makedirs(SERVER_ARGS["dir"])
-
-    if not args.readonly:
-        threading.Thread(target=worker_loop, daemon=True, name="WorkerThread").start()
-
+    threading.Thread(target=worker_loop, daemon=True, name="WorkerThread").start()
     threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
 
-    app.run(host="0.0.0.0", port=args.port, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=config.port, debug=False, use_reloader=False)

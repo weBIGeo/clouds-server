@@ -1,3 +1,12 @@
+# Directory where generated tile sets are stored.
+output_dir = "tiles_output"
+
+# Port the Flask server listens on.
+port = 8000
+
+# If True, downloaded GRIB files are kept on disk after processing.
+keep_gribs = False
+
 # Daily UTC time (HH:MM) at which the auto-build and archive tasks run.
 # The same tasks also run once immediately on server startup.
 auto_build_time = "02:30"
