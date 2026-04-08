@@ -6,9 +6,11 @@ import threading
 import queue
 import argparse
 import re
+import time
+import config
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -44,7 +46,7 @@ def fetch_run_steps(run_str, timeout=10):
 
     If fetching or parsing fails, returns an empty set.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Window bounds for relevance
     min_time = now - timedelta(hours=HISTORY_WINDOW)
@@ -84,7 +86,7 @@ def fetch_run_steps(run_str, timeout=10):
     except Exception:
         # Cache failure to debounce repeated failed fetches
         with DWD_RUN_CACHE_LOCK:
-            DWD_RUN_CACHE[run_str] = {"steps": set(), "status": "fail", "ts": datetime.utcnow()}
+            DWD_RUN_CACHE[run_str] = {"steps": set(), "status": "fail", "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
         return set()
 
     # Regex to find filenames for this run_str and capture the step (three digits)
@@ -100,9 +102,9 @@ def fetch_run_steps(run_str, timeout=10):
 
     with DWD_RUN_CACHE_LOCK:
         if steps:
-            DWD_RUN_CACHE[run_str] = {"steps": steps, "status": "success", "ts": datetime.utcnow()}
+            DWD_RUN_CACHE[run_str] = {"steps": steps, "status": "success", "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
         else:
-            DWD_RUN_CACHE[run_str] = {"steps": set(), "status": "fail", "ts": datetime.utcnow()}
+            DWD_RUN_CACHE[run_str] = {"steps": set(), "status": "fail", "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
 
     return steps
 
@@ -122,7 +124,7 @@ def get_best_run_and_step(target_time):
     (0..MAX_FORECAST_STEP hours). It only considers runs aligned to
     `DWD_RUN_INTERVAL` and not in the future.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     time_id = target_time.strftime("%Y%m%d%H")
 
     # Fast-path: cached result
@@ -145,7 +147,7 @@ def get_best_run_and_step(target_time):
             break
 
     with BEST_RUN_CACHE_LOCK:
-        BEST_RUN_CACHE[time_id] = {"run": best[0], "step": best[1], "ts": datetime.utcnow()}
+        BEST_RUN_CACHE[time_id] = {"run": best[0], "step": best[1], "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
 
     return best
 
@@ -190,7 +192,7 @@ def cleanup_old_data():
     if not SERVER_ARGS["clean"]:
         return
 
-    cutoff = datetime.utcnow() - timedelta(hours=HISTORY_WINDOW)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=HISTORY_WINDOW)
 
     folders = []
     base_dir = SERVER_ARGS["dir"]
@@ -227,14 +229,12 @@ def worker_output_reader(process, task_key, log_file_path):
             if line.startswith("PROGRESS::"):
                 try:
                     _, stage, detail, percent_str = line.split("::", 3)
-                    progress = {
-                        "stage": stage,
-                        "detail": detail,
-                        "percent": int(percent_str),
-                    }
+                    percent = int(percent_str)
+                    progress = {"stage": stage, "detail": detail, "percent": percent}
                     with processing_lock:
                         if task_key in task_progress:
                             task_progress[task_key].update(progress)
+                    print(f"[Worker {task_key[0]}+{task_key[1]}h] {stage}: {detail} ({percent}%)")
                 except (ValueError, IndexError):
                     pass
 
@@ -270,7 +270,7 @@ def worker_loop():
             output_dir,
         ]
 
-        if(SERVER_ARGS["keep-gribs"]):
+        if SERVER_ARGS["keep-gribs"]:
             cmd.append("--keep-gribs")
 
         with processing_lock:
@@ -281,9 +281,10 @@ def worker_loop():
                 "percent": 0,
             }
 
-        print(f"[Server] Processing: {run_str} +{step}h")
+        queue_depth = generation_queue.qsize()
+        print(f"[Server] Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
+        success = False
         try:
-            # Use Popen for non-blocking execution
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -293,7 +294,6 @@ def worker_loop():
                 errors="replace"
             )
 
-            # Start a thread to read the output in real-time
             reader_thread = threading.Thread(
                 target=worker_output_reader,
                 args=(process, task_key, log_path),
@@ -301,20 +301,38 @@ def worker_loop():
             )
             reader_thread.start()
 
-            # Wait for the process to complete
             process.wait()
+            reader_thread.join()
 
-            # Optional: Check return code
             if process.returncode != 0:
-                print(
-                    f"[Server] Worker for {task_key} failed. See {log_path} for details."
-                )
+                print(f"[Server] Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
+            else:
+                print(f"[Server] Done: run {run_str} +{step}h")
+                success = True
 
         except Exception as e:
             print(f"[Server] Error launching worker: {e}")
         finally:
             with processing_lock:
                 task_progress.pop(task_key, None)
+
+        # Remove any stale folders for the same target time
+        if success:
+            target_dt = run_dt + timedelta(hours=step)
+            base_dir = SERVER_ARGS["dir"]
+            for name in os.listdir(base_dir):
+                if name == folder_name:
+                    continue
+                path = os.path.join(base_dir, name)
+                if not os.path.isdir(path) or "_" not in name:
+                    continue
+                try:
+                    r2, s2 = name.split("_", 1)
+                    if datetime.strptime(r2, "%Y%m%d%H") + timedelta(hours=int(s2)) == target_dt:
+                        shutil.rmtree(path, ignore_errors=True)
+                        print(f"[Server] Removed stale folder: {name}")
+                except ValueError:
+                    continue
 
         generation_queue.task_done()
 
@@ -382,8 +400,8 @@ def get_status():
         return jsonify({"error": "Invalid time format"}), 400
 
     # Check time window boundaries
-    min_time = datetime.utcnow() - timedelta(hours=HISTORY_WINDOW)
-    max_time = datetime.utcnow() + timedelta(hours=MAX_FORECAST_STEP)
+    min_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=HISTORY_WINDOW)
+    max_time = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=MAX_FORECAST_STEP)
     is_in_window = min_time <= target_time <= max_time
 
     if is_in_window:
@@ -459,7 +477,7 @@ def generate_request():
 
 @app.route("/available", methods=["GET"])
 def list_available():
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
     valid_slots = []
     processed_ids = set()
 
@@ -526,6 +544,117 @@ def serve_tiles(filename):
     return ("Forbidden", 403)
 
 
+def auto_build_all():
+    """Queue generation for every available DWD slot that is not yet ready on disk."""
+    if SERVER_ARGS.get("readonly"):
+        return
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
+    start = now - timedelta(hours=HISTORY_WINDOW)
+    end = now + timedelta(hours=MAX_FORECAST_STEP)
+
+    disk_state = scan_existing_folders()
+    already_queued = set()
+    queued = 0
+
+    curr = start
+    while curr <= end:
+        time_id = curr.strftime("%Y%m%d%H")
+        best_run, best_step = get_best_run_and_step(curr)
+        if best_run:
+            best_run_str = best_run.strftime("%Y%m%d%H")
+            task_key = (best_run_str, best_step)
+
+            if task_key in already_queued:
+                curr += timedelta(hours=1)
+                continue
+
+            disk_entry = disk_state.get(time_id)
+            if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
+                curr += timedelta(hours=1)
+                continue
+
+            with processing_lock:
+                if task_key in task_progress:
+                    curr += timedelta(hours=1)
+                    continue
+
+            generation_queue.put((best_run, best_step))
+            already_queued.add(task_key)
+            queued += 1
+            print(f"[AutoBuild] Queued: run {best_run_str} +{best_step}h → target {time_id}")
+
+        curr += timedelta(hours=1)
+
+    print(f"[AutoBuild] Done — {queued} tile set(s) queued")
+
+
+def archive_old_data():
+    """For days older than archive_threshold_days, delete all folders except those
+    whose target hour is in archive_keep_hours."""
+    threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=config.archive_threshold_days)
+    keep_hours = set(config.archive_keep_hours)
+    base_dir = SERVER_ARGS.get("dir", "tiles_output")
+
+    if not os.path.exists(base_dir):
+        return
+
+    removed = 0
+    for name in os.listdir(base_dir):
+        path = os.path.join(base_dir, name)
+        if not os.path.isdir(path) or "_" not in name:
+            continue
+        try:
+            r_str, s_str = name.split("_", 1)
+            run_dt = datetime.strptime(r_str, "%Y%m%d%H")
+            step = int(s_str)
+            target_dt = run_dt + timedelta(hours=step)
+
+            if target_dt >= threshold:
+                continue
+
+            if target_dt.hour in keep_hours:
+                continue
+
+            # Skip if an active task is still working on this folder
+            with processing_lock:
+                if (r_str, step) in task_progress:
+                    continue
+
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
+        except (ValueError, Exception):
+            continue
+
+    print(f"[Archive] Removed {removed} old tile set(s) outside keep_hours={sorted(keep_hours)}")
+
+
+def scheduler_loop():
+    """Runs auto_build_all + archive_old_data on startup and daily at auto_build_time."""
+    print("[Scheduler] Running initial tasks on startup...")
+    auto_build_all()
+    archive_old_data()
+
+    while True:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        try:
+            hour, minute = map(int, config.auto_build_time.split(":"))
+        except ValueError:
+            hour, minute = 2, 30
+
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+
+        sleep_secs = (next_run - now).total_seconds()
+        print(f"[Scheduler] Next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
+        time.sleep(sleep_secs)
+
+        print("[Scheduler] Running scheduled tasks...")
+        auto_build_all()
+        archive_old_data()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", type=str, default="tiles_output")
@@ -544,7 +673,8 @@ if __name__ == "__main__":
         os.makedirs(SERVER_ARGS["dir"])
 
     if not args.readonly:
-        t = threading.Thread(target=worker_loop, daemon=True, name="WorkerThread")
-        t.start()
+        threading.Thread(target=worker_loop, daemon=True, name="WorkerThread").start()
+
+    threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
 
     app.run(host="0.0.0.0", port=args.port, debug=False, use_reloader=False)
