@@ -34,12 +34,4 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Available flags:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--port` | `8000` | Port to listen on |
-| `--dir` | `tiles_output` | Directory for generated tiles |
-| `--clean` | off | Delete tile data outside the history window |
-| `--readonly` | off | Disable tile generation, serve existing data only |
-| `--keep-gribs` | off | Keep downloaded GRIB2 files after processing |
+Configuration is managed in [`config.py`](config.py). See [`API.md`](API.md) for the full API reference.
