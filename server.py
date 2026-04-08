@@ -152,8 +152,7 @@ def scan_existing_folders():
                 target_dt = run_dt + timedelta(hours=step)
                 target_str = target_dt.strftime("%Y%m%d%H")
 
-                # Check for shadow map existence to confirm readiness
-                is_ready = os.path.isfile(os.path.join(path, "shadow.ktx2"))
+                is_ready = not os.path.isfile(os.path.join(path, "invalid"))
 
                 if target_str not in results or (run_dt > results[target_str]["run"]):
                     results[target_str] = {
@@ -232,6 +231,9 @@ def worker_loop():
         output_dir = os.path.join(os.path.abspath(config.output_dir), folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
+        invalid_path = os.path.join(output_dir, "invalid")
+        open(invalid_path, "w").close()
+
         log_path = os.path.join(output_dir, "latest.log")
 
         cmd = [
@@ -283,6 +285,7 @@ def worker_loop():
             if process.returncode != 0:
                 print(f"[Server] Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
             else:
+                os.remove(invalid_path)
                 elapsed = time.monotonic() - start_time
                 print(f"[Server] Done: run {run_str} +{step}h ({elapsed:.1f}s)")
                 success = True
@@ -446,9 +449,25 @@ def archive_old_data():
     print(f"[Archive] Removed {removed} old tile set(s) outside keep_hours={sorted(keep_hours)}")
 
 
+def cleanup_invalid_dirs():
+    """Delete directories left incomplete from an interrupted processing run."""
+    base_dir = os.path.abspath(config.output_dir)
+    if not os.path.exists(base_dir):
+        return
+    removed = 0
+    for name in os.listdir(base_dir):
+        path = os.path.join(base_dir, name)
+        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "invalid")):
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
+    if removed:
+        print(f"[Scheduler] Removed {removed} incomplete tile set(s)")
+
+
 def scheduler_loop():
-    """Runs auto_build_all + archive_old_data on startup and at each configured auto_build_time."""
+    """Runs cleanup + auto_build_all + archive_old_data on startup and at each configured auto_build_time."""
     print("[Scheduler] Running initial tasks on startup...")
+    cleanup_invalid_dirs()
     auto_build_all()
     archive_old_data()
 
@@ -475,6 +494,7 @@ def scheduler_loop():
         time.sleep(sleep_secs)
 
         print("[Scheduler] Running scheduled tasks...")
+        cleanup_invalid_dirs()
         auto_build_all()
         archive_old_data()
 
