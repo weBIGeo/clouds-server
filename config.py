@@ -7,9 +7,10 @@ port = 8000
 # If True, downloaded GRIB files are kept on disk after processing.
 keep_gribs = False
 
-# Daily UTC time (HH:MM) at which the auto-build and archive tasks run.
+# UTC times (HH:MM) at which the auto-build and archive tasks run.
 # The same tasks also run once immediately on server startup.
-auto_build_time = "02:30"
+# Default: 30 minutes after each ICON-D2 run (every 3 hours).
+auto_build_time = ["00:30", "03:30", "06:30", "09:30", "12:30", "15:30", "18:30", "21:30"]
 
 # Number of days after which a time slot becomes eligible for archiving.
 # Slots older than this threshold are pruned, except for the hours listed below.

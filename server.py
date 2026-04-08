@@ -10,7 +10,7 @@ import config
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 DWD_RUN_INTERVAL = 3
@@ -32,11 +32,6 @@ DWD_RUN_CACHE = {}
 DWD_RUN_CACHE_LOCK = threading.Lock()
 # When a listing fetch fails, cache that failure for this many seconds
 DWD_FAIL_TTL = 60
-
-# Cache for get_best_run_and_step: maps time_id -> {"run": datetime or None, "step": int or None, "ts": datetime}
-BEST_RUN_CACHE = {}
-BEST_RUN_TTL = 60
-BEST_RUN_CACHE_LOCK = threading.Lock()
 
 
 def fetch_run_steps(run_str, timeout=10):
@@ -117,21 +112,11 @@ def is_dwd_available(run_dt, step, timeout=10):
 def get_best_run_and_step(target_time):
     """Return the best available (run_datetime, step) for the given target_time.
 
-    This function checks cached results for `target_time` (1-minute TTL) and
-    otherwise inspects candidate runs stepping backwards from the target time
+    Inspects candidate runs stepping backwards from the target time
     (0..MAX_FORECAST_STEP hours). It only considers runs aligned to
     `DWD_RUN_INTERVAL` and not in the future.
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    time_id = target_time.strftime("%Y%m%d%H")
-
-    # Fast-path: cached result
-    with BEST_RUN_CACHE_LOCK:
-        entry = BEST_RUN_CACHE.get(time_id)
-        if entry and (now - entry["ts"]).total_seconds() < BEST_RUN_TTL:
-            return entry["run"], entry["step"]
-
-    best = (None, None)
 
     for step in range(0, MAX_FORECAST_STEP + 1):
         run_time = target_time - timedelta(hours=step)
@@ -141,13 +126,9 @@ def get_best_run_and_step(target_time):
             continue
 
         if is_dwd_available(run_time, step):
-            best = (run_time, step)
-            break
+            return run_time, step
 
-    with BEST_RUN_CACHE_LOCK:
-        BEST_RUN_CACHE[time_id] = {"run": best[0], "step": best[1], "ts": datetime.now(timezone.utc).replace(tzinfo=None)}
-
-    return best
+    return None, None
 
 
 def get_folder_path(run_time, step):
@@ -229,7 +210,6 @@ def worker_output_reader(process, task_key, log_file_path):
                     with processing_lock:
                         if task_key in task_progress:
                             task_progress[task_key].update(progress)
-                    print(f"[Worker {task_key[0]}+{task_key[1]}h] {stage}: {detail} ({percent}%)")
                 except (ValueError, IndexError):
                     pass
 
@@ -278,6 +258,7 @@ def worker_loop():
 
         queue_depth = generation_queue.qsize()
         print(f"[Server] Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
+        start_time = time.monotonic()
         success = False
         try:
             process = subprocess.Popen(
@@ -302,7 +283,8 @@ def worker_loop():
             if process.returncode != 0:
                 print(f"[Server] Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
             else:
-                print(f"[Server] Done: run {run_str} +{step}h")
+                elapsed = time.monotonic() - start_time
+                print(f"[Server] Done: run {run_str} +{step}h ({elapsed:.1f}s)")
                 success = True
 
         except Exception as e:
@@ -332,163 +314,21 @@ def worker_loop():
         generation_queue.task_done()
 
 
-def get_slot_status(target_time):
-    """
-    Consolidated logic to get the status of a single time slot.
-    This will be used by both /status and /available.
-    """
-    time_id = target_time.strftime("%Y%m%d%H")
-
-    # 1. Determine the 'best' possible forecast for this time
-    best_run, best_step = get_best_run_and_step(target_time)
-    if not best_run:
-        return {
-            "id": time_id,
-            "status": "error",
-            "message": "Time is too far in the future",
-        }
-
-    best_run_str = best_run.strftime("%Y%m%d%H")
-
-    slot_data = {
-        "id": time_id,
-        "status": "unknown",  # Default status if not found on disk or in queue
-        "run": best_run_str,
-        "step": best_step,
-    }
-
-    # 2. Check if it's currently being generated
-    with processing_lock:
-        task_key = (best_run_str, best_step)
-        if task_key in task_progress:
-            slot_data["status"] = "pending"
-            slot_data["progress"] = task_progress[task_key]
-            return slot_data
-
-    # 3. Check if data exists on disk
-    disk_state = scan_existing_folders()
-    if time_id in disk_state:
-        entry = disk_state[time_id]
-        if entry["ready"]:
-            slot_data["path"] = f"/{entry['folder']}/"
-            slot_data["run"] = entry["run"].strftime("%Y%m%d%H")
-            slot_data["step"] = entry["step"]
-            # Is the data on disk the "best" possible data?
-            if entry["run"] == best_run:
-                slot_data["status"] = "ready"
-            else:
-                slot_data["status"] = "stale"
-
-    return slot_data
-
-
-@app.route("/status", methods=["GET"])
-def get_status():
-    """NEW: Endpoint to get the status of a single time slot."""
-    time_str = request.args.get("time")
-    if not time_str:
-        return jsonify({"error": "Missing time parameter"}), 400
-
-    try:
-        target_time = datetime.strptime(time_str, "%Y%m%d%H")
-    except ValueError:
-        return jsonify({"error": "Invalid time format"}), 400
-
-    # Check time window boundaries
-    min_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=HISTORY_WINDOW)
-    max_time = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=MAX_FORECAST_STEP)
-    is_in_window = min_time <= target_time <= max_time
-
-    if is_in_window:
-        status = get_slot_status(target_time)
-        return jsonify(status)
-
-    # Outside the live window — check disk for historical data.
-    time_id = target_time.strftime("%Y%m%d%H")
-    disk_state = scan_existing_folders()
-    entry = disk_state.get(time_id)
-
-    if entry and entry["ready"]:
-        slot_data = {
-            "id": time_id,
-            "status": "ready",
-            "path": f"/{entry['folder']}/",
-            "run": entry["run"].strftime("%Y%m%d%H"),
-            "step": entry["step"],
-        }
-        return jsonify(slot_data)
-    else:
-        return (
-            jsonify({"status": "error", "message": "Data not available for this time"}),
-            404,
-        )
-
-
-@app.route("/generate", methods=["POST"])
-def generate_request():
-    time_str = request.args.get("time")
-    if not time_str:
-        return jsonify({"error": "Missing time"}), 400
-
-    try:
-        target_time = datetime.strptime(time_str, "%Y%m%d%H")
-    except ValueError:
-        return jsonify({"error": "Invalid format"}), 400
-
-    best_run, best_step = get_best_run_and_step(target_time)
-    if not best_run:
-        return (
-            jsonify({"status": "error", "message": "Forecast too far in future"}),
-            400,
-        )
-
-    best_run_str = best_run.strftime("%Y%m%d%H")
-
-    with processing_lock:
-        task_key = (best_run_str, best_step)
-        if task_key not in task_progress:
-            # Add to queue only if not already being processed
-            print(f"[Server] Queuing generation for {task_key}")
-            generation_queue.put((best_run, best_step))
-        else:
-            print(f"[Server] Generation for {task_key} is already in progress.")
-
-    # Respond with 202 Accepted, indicating the request was received.
-    # The client should then use the /status endpoint to poll.
-    return jsonify({"status": "pending", "message": "Generation has been queued"}), 202
-
-
 @app.route("/available", methods=["GET"])
 def list_available():
-    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
-    valid_slots = []
-    processed_ids = set()
-
-    curr = now - timedelta(hours=HISTORY_WINDOW)
-    # The limit can be simplified as we only need to show what's possible now
-    limit_time = now + timedelta(hours=MAX_FORECAST_STEP)
-
-    while curr < limit_time:
-        slot_info = get_slot_status(curr)
-        valid_slots.append(slot_info)
-        processed_ids.add(slot_info["id"])
-        curr += timedelta(hours=1)
-
     disk_state = scan_existing_folders()
+    items = []
     for time_id, entry in disk_state.items():
-        if time_id not in processed_ids and entry["ready"]:
-            slot_data = {
+        if entry["ready"]:
+            items.append({
                 "id": time_id,
                 "status": "ready",
                 "path": f"/{entry['folder']}/",
                 "run": entry["run"].strftime("%Y%m%d%H"),
                 "step": entry["step"],
-            }
-            valid_slots.append(slot_data)
-
-    valid_slots.sort(key=lambda x: x["id"])
-
-    return jsonify({"items": valid_slots})
+            })
+    items.sort(key=lambda x: x["id"])
+    return jsonify({"items": items})
 
 
 @app.route("/<path:filename>")
@@ -607,22 +447,29 @@ def archive_old_data():
 
 
 def scheduler_loop():
-    """Runs auto_build_all + archive_old_data on startup and daily at auto_build_time."""
+    """Runs auto_build_all + archive_old_data on startup and at each configured auto_build_time."""
     print("[Scheduler] Running initial tasks on startup...")
     auto_build_all()
     archive_old_data()
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        try:
-            hour, minute = map(int, config.auto_build_time.split(":"))
-        except ValueError:
-            hour, minute = 2, 30
 
-        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(days=1)
+        candidates = []
+        for entry in config.auto_build_time:
+            try:
+                hour, minute = map(int, entry.split(":"))
+            except ValueError:
+                continue
+            t = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if t <= now:
+                t += timedelta(days=1)
+            candidates.append(t)
 
+        if not candidates:
+            candidates = [now.replace(hour=2, minute=30, second=0, microsecond=0) + timedelta(days=1)]
+
+        next_run = min(candidates)
         sleep_secs = (next_run - now).total_seconds()
         print(f"[Scheduler] Next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
         time.sleep(sleep_secs)
