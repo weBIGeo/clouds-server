@@ -7,6 +7,9 @@ port = 8000
 # If True, downloaded GRIB files are kept on disk after processing.
 keep_gribs = False
 
+# Number of parallel workers for downloading GRIB files from DWD.
+download_workers = 32
+
 # UTC times (HH:MM) at which the auto-build and archive tasks run.
 # The same tasks also run once immediately on server startup.
 # Default: 30 minutes after each ICON-D2 run (every 3 hours).
