@@ -3,7 +3,6 @@ import sys
 import shutil
 import subprocess
 import threading
-import queue
 import re
 import time
 import config
@@ -18,7 +17,9 @@ DWD_RUN_INTERVAL = 3
 app = Flask(__name__)
 CORS(app)
 
-generation_queue = queue.Queue()
+pending_tasks = {}  # target_time_id -> (run_dt, step)
+pending_tasks_lock = threading.Lock()
+pending_tasks_ready = threading.Event()
 active_tasks = set()
 processing_lock = threading.Lock()
 task_progress = {}
@@ -189,11 +190,17 @@ def worker_output_reader(process, task_key, log_file_path):
 
 def worker_loop():
     while True:
-        task = generation_queue.get()
-        if task is None:
-            break
+        pending_tasks_ready.wait()
 
-        run_dt, step = task
+        with pending_tasks_lock:
+            if not pending_tasks:
+                pending_tasks_ready.clear()
+                continue
+            target_id, (run_dt, step) = next(iter(pending_tasks.items()))
+            del pending_tasks[target_id]
+            if not pending_tasks:
+                pending_tasks_ready.clear()
+
         run_str = run_dt.strftime("%Y%m%d%H")
         task_key = (run_str, step)
 
@@ -228,7 +235,8 @@ def worker_loop():
                 "percent": 0,
             }
 
-        queue_depth = generation_queue.qsize()
+        with pending_tasks_lock:
+            queue_depth = len(pending_tasks)
         print(f"[Server] Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
         start_time = time.monotonic()
         success = False
@@ -284,7 +292,6 @@ def worker_loop():
                 except ValueError:
                     continue
 
-        generation_queue.task_done()
 
 
 @app.route("/available", methods=["GET"])
@@ -356,37 +363,43 @@ def auto_build_all():
             targets.append(datetime(day.year, day.month, day.day, h))
 
     disk_state = scan_existing_folders()
-    already_queued = set()
 
-    pending = []
+    updates = {}  # target_id -> (run_dt, step)
     for target_time in targets:
         time_id = target_time.strftime("%Y%m%d%H")
         best_run, best_step = get_best_run_and_step(target_time)
         if not best_run:
             continue
 
-        best_run_str = best_run.strftime("%Y%m%d%H")
-        task_key = (best_run_str, best_step)
-
-        if task_key in already_queued:
-            continue
-
-        disk_entry = disk_state.get(time_id)
-        if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
-            continue
+        task_key = (best_run.strftime("%Y%m%d%H"), best_step)
 
         with processing_lock:
             if task_key in task_progress:
                 continue
 
-        pending.append((best_run, best_step))
-        already_queued.add(task_key)
-        print(f"[AutoBuild] Queuing: run {best_run_str} +{best_step}h → target {time_id}")
+        disk_entry = disk_state.get(time_id)
+        if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
+            continue
 
-    for task in pending:
-        generation_queue.put(task)
+        updates[time_id] = (best_run, best_step)
 
-    print(f"[AutoBuild] Done — {len(pending)} tile set(s) queued")
+    added = replaced = 0
+    with pending_tasks_lock:
+        for time_id, (run_dt, step) in updates.items():
+            existing = pending_tasks.get(time_id)
+            if existing is not None and run_dt <= existing[0]:
+                continue  # already queued with same or better run
+            pending_tasks[time_id] = (run_dt, step)
+            if existing is not None:
+                replaced += 1
+                print(f"[AutoBuild] Replaced: target {time_id} +{existing[1]}h → +{step}h")
+            else:
+                added += 1
+                print(f"[AutoBuild] Queuing: run {run_dt.strftime('%Y%m%d%H')} +{step}h → target {time_id}")
+        if pending_tasks:
+            pending_tasks_ready.set()
+
+    print(f"[AutoBuild] Done — {added} added, {replaced} replaced")
 
 
 def purge_old_data():
