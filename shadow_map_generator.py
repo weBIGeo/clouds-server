@@ -1,5 +1,6 @@
 import math
 import os
+import time
 import argparse
 import numpy as np
 import mercantile
@@ -172,7 +173,7 @@ class ShadowMapGenerator:
         report_progress("shadows", f"Saving to {output_path}", 75)
         self._crop_and_save(canvas, region, min_x, max_x, min_y, max_y, output_path)
 
-        report_progress("shadows", "Completed", 100)
+        report_progress("shadows", "Saving output", 100)
 
     def _crop_and_save(self, canvas, region, min_x, max_x, min_y, max_y, path):
 
@@ -245,8 +246,10 @@ def generate_shadows(data_dir, output_path, crop_region, lod_config=None):
         config.vertical_layers = lod_config.vertical_layers
         config.max_density = lod_config.max_density_value
 
+    start_time = time.time()
     generator = ShadowMapGenerator(data_dir, config)
     generator.generate(crop_region, output_path)
+    print(f"-!- Shadow Map Generation completed after {time.time() - start_time:.2f}s ---")
 
 
 def main():

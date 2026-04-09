@@ -182,6 +182,7 @@ class DWDDownloader:
             f"--- Starting Download: Run {run_dt.strftime('%Y-%m-%d %H:00')} +{step_hours}h ---"
         )
 
+        start_time = time.time()
         with ThreadPoolExecutor(max_workers=server_config.download_workers) as executor:
             for var_key in vars_to_fetch:
                 if var_key not in VAR_SPECS:
@@ -214,7 +215,7 @@ class DWDDownloader:
                     completed / total * 100,
                 )
 
-        print("\n--- Download Complete ---")
+        print(f"\n-!- Download completed after {time.time() - start_time:.2f}s ---")
         return results
 
 

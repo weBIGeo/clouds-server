@@ -717,4 +717,4 @@ class TileProcessor:
 
         self.save_thread_pool.shutdown(wait=True)
         total_time = time.time() - start_time
-        print(f"\nCompleted in {total_time:.2f}s")
+        print(f"\n-!- Upsampling completed after {total_time:.2f}s ---")

@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import zstandard as zstd
 import numpy as np
@@ -333,6 +334,7 @@ class LODGenerator:
         """Main entry point for LOD generation."""
         print(f"--- Starting LOD Generation ({self.start_zoom}-{self.max_zoom}) ---")
         report_progress("lod_generation", "", 0)
+        start_time = time.time()
 
         # Scan for leaf tiles
         leaf_coords = self._scan_leaf_tiles()
@@ -370,7 +372,7 @@ class LODGenerator:
         if self.config.analyze_error:
             self._print_error_summary()
 
-        print("LOD Generation Complete.")
+        print(f"-!- LOD Generation completed after {time.time() - start_time:.2f}s ---")
 
     def _scan_leaf_tiles(self) -> set:
         """Scan directory for leaf tile files at max_zoom."""
