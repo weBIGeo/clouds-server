@@ -9,7 +9,14 @@ port = 8000
 keep_gribs = False
 
 # Number of parallel workers for downloading GRIB files from DWD.
-download_workers = 32
+download_workers = 16
+
+# Number of tile-set jobs that can be processed concurrently.
+# Each job already uses many threads/GPU internally, so >1 only helps if you
+# have spare resources (e.g. one job downloading while another is processing).
+# NOTE: When >1, downloads are serialized so jobs naturally spread across
+# different pipeline stages (download vs. processing vs. saving).
+worker_threads = 3
 
 # Unified scheme controlling which tile sets are fetched and which are purged.
 # Rules are checked top-to-bottom; the first rule where the target's day offset
@@ -46,5 +53,5 @@ tile_retention_policy = [
 
 # UTC times (HH:MM) at which the auto-build and archive tasks run.
 # The same tasks also run once immediately on server startup.
-# Default: 30 minutes after each ICON-D2 run (every 3 hours).
-auto_build_time = ["00:30", "03:30", "06:30", "09:30", "12:30", "15:30", "18:30", "21:30"]
+# NOTE: ICON-D2 runs are every 3 hours starting at 00:00, but it takes some time until they are available
+auto_build_time = ["00:30", "07:30", "16:30"]

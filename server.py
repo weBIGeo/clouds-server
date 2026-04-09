@@ -25,6 +25,7 @@ processing_lock = threading.Lock()
 task_progress = {}
 
 
+
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
 DWD_RUN_CACHE = {}
@@ -223,6 +224,7 @@ def worker_loop():
                 continue
             target_id, (run_dt, step) = next(iter(pending_tasks.items()))
             del pending_tasks[target_id]
+            queue_depth = len(pending_tasks)
             if not pending_tasks:
                 pending_tasks_ready.clear()
 
@@ -260,8 +262,6 @@ def worker_loop():
                 "percent": 0,
             }
 
-        with pending_tasks_lock:
-            queue_depth = len(pending_tasks)
         print(f"[Server] Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
         start_time = time.monotonic()
         success = False
@@ -388,7 +388,7 @@ def auto_build_all():
 
     disk_state = scan_existing_folders()
 
-    updates = {}  # target_id -> (run_dt, step)
+    added = replaced = 0
     for target_time in targets:
         time_id = target_time.strftime("%Y%m%d%H")
         best_run, best_step = get_best_run_and_step(target_time)
@@ -405,25 +405,24 @@ def auto_build_all():
         if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
             continue
 
-        updates[time_id] = (best_run, best_step)
-
-    added = replaced = 0
-    with pending_tasks_lock:
-        for time_id, (run_dt, step) in updates.items():
+        with pending_tasks_lock:
             existing = pending_tasks.get(time_id)
-            if existing is not None and run_dt <= existing[0]:
+            if existing is not None and best_run <= existing[0]:
                 continue  # already queued with same or better run
-            pending_tasks[time_id] = (run_dt, step)
-            if existing is not None:
-                replaced += 1
-                print(f"[AutoBuild] Replaced: target {time_id} +{existing[1]}h → +{step}h")
-            else:
-                added += 1
-                print(f"[AutoBuild] Queuing: run {run_dt.strftime('%Y%m%d%H')} +{step}h → target {time_id}")
-        if pending_tasks:
-            pending_tasks_ready.set()
+            pending_tasks[time_id] = (best_run, best_step)
+
+        if existing is not None:
+            replaced += 1
+            print(f"[AutoBuild] Replaced: target {time_id} +{existing[1]}h → +{best_step}h")
+        else:
+            added += 1
+            print(f"[AutoBuild] Queuing: run {best_run.strftime('%Y%m%d%H')} +{best_step}h → target {time_id}")
 
     print(f"[AutoBuild] Done — {added} added, {replaced} replaced")
+    # Signal workers only after all tasks are queued so they see correct queue depths.
+    with pending_tasks_lock:
+        if pending_tasks:
+            pending_tasks_ready.set()
 
 
 def purge_old_data():
@@ -496,7 +495,8 @@ if __name__ == "__main__":
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    threading.Thread(target=worker_loop, daemon=True, name="WorkerThread").start()
+    for i in range(config.worker_threads):
+        threading.Thread(target=worker_loop, daemon=True, name=f"WorkerThread-{i}").start()
     threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
 
     app.run(host="0.0.0.0", port=config.port, debug=False, use_reloader=False)
