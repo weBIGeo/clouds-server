@@ -36,7 +36,6 @@ Returns all ready tile sets currently on disk, sorted by time.
 ---
 
 ## `GET /{folder}/tiles/{z}/{x}/{y}.ktx2`
-## `GET /{folder}/tiles/{z}/{x}/{y}.sdf.ktx2`
 
 Serves a cloud tile in KTX2 format. `{folder}` is the value of the `path` field returned by `/available` (e.g. `2026040809_003`).
 

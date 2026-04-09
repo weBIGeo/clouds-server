@@ -7,12 +7,9 @@ import re
 import time
 import config
 import urllib.request
-import urllib.error
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-
-DWD_RUN_INTERVAL = 3
 
 app = Flask(__name__)
 CORS(app)
@@ -25,13 +22,14 @@ processing_lock = threading.Lock()
 task_progress = {}
 
 
-
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
 DWD_RUN_CACHE = {}
 DWD_RUN_CACHE_LOCK = threading.Lock()
 # When a listing fetch fails, cache that failure for this many seconds
 DWD_FAIL_TTL = 60
+# ICON-D2 only produces runs at 00, 03, 06, 09..
+DWD_RUN_INTERVAL = 3
 
 
 def get_scheme_rule(target_dt):
@@ -45,7 +43,7 @@ def get_scheme_rule(target_dt):
 
 
 def _scheme_fetch_window():
-    """Return (min_day_offset, max_day_offset) covering all fetch_and_purge rules."""
+    """Return (min_day_offset, max_day_offset) covering all fetch modes (fetch_and_purge + fetch_only)."""
     scheme = config.tile_retention_policy
     fetch_indices = [i for i, r in enumerate(scheme) if r["mode"] in ("fetch_and_purge", "fetch_only")]
     if not fetch_indices:
@@ -134,20 +132,20 @@ def is_dwd_available(run_dt, step, timeout=10):
 
 
 def get_best_run_and_step(target_time):
-    """Return the best available (run_datetime, step) for the given target_time.
+    """Return the best (most recent) available (run_datetime, step) for target_time.
 
-    Inspects candidate runs stepping backwards from the target time
-    (0..MAX_FORECAST_STEP hours). It only considers runs aligned to
-    `DWD_RUN_INTERVAL` and not in the future.
+    Steps backwards through DWD_RUN_INTERVAL-aligned run times only, up to the
+    maximum fetch window, and returns the first one published on DWD.
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     _, upper_offset = _scheme_fetch_window()
-    for step in range(0, upper_offset * 24 + 1):
+    # Start at the first aligned run at or before target_time, then stride by interval.
+    first_step = target_time.hour % DWD_RUN_INTERVAL
+    for step in range(first_step, upper_offset * 24 + 1, DWD_RUN_INTERVAL):
         run_time = target_time - timedelta(hours=step)
 
-        # Must align to configured run interval and not be in the future
-        if (run_time.hour % DWD_RUN_INTERVAL) != 0 or run_time > now:
+        if run_time > now:
             continue
 
         if is_dwd_available(run_time, step):
@@ -340,17 +338,16 @@ def list_available():
 def serve_tiles(filename):
     """
     Handles file serving with path rewriting:
-    1. Tiles:  /{run_step}/tiles/{z}/{x}/{y}.ktx2 -> /{run_step}/tile_{z}_{x}_{y}.ktx2
-    2. Shadow: /{run_step}/shadow.ktx2            -> /{run_step}/shadow.ktx2
+    1. Tiles:  /{folder}/tiles/{z}/{x}/{y}.ktx2 -> /{folder}/tile_{z}_{x}_{y}.ktx2
+    2. Shadow: /{folder}/shadow.ktx2             -> /{folder}/shadow.ktx2
     """
 
     # 1. Tile Route
-    # Pattern: run_step/tiles/z/x/y(.sdf).ktx2
-    tile_match = re.match(r"^([^/]+)/tiles/(\d+)/(\d+)/(\d+)(\.sdf)?\.ktx2$", filename)
+    # Pattern: run_step/tiles/z/x/y.ktx2
+    tile_match = re.match(r"^([^/]+)/tiles/(\d+)/(\d+)/(\d+)\.ktx2$", filename)
     if tile_match:
-        folder, z, x, y, is_sdf = tile_match.groups()
-        suffix = ".sdf.ktx2" if is_sdf else ".ktx2"
-        real_filename = f"tile_{z}_{x}_{y}{suffix}"
+        folder, z, x, y = tile_match.groups()
+        real_filename = f"tile_{z}_{x}_{y}.ktx2"
 
         # We send from the specific run_step folder
         return send_from_directory(
@@ -418,7 +415,7 @@ def auto_build_all():
             added += 1
             print(f"[AutoBuild] Queuing: run {best_run.strftime('%Y%m%d%H')} +{best_step}h → target {time_id}")
 
-    print(f"[AutoBuild] Done — {added} added, {replaced} replaced")
+    print(f"[AutoBuild] Done: {added} added, {replaced} replaced")
     # Signal workers only after all tasks are queued so they see correct queue depths.
     with pending_tasks_lock:
         if pending_tasks:
@@ -448,7 +445,7 @@ def purge_old_data():
         rule = get_scheme_rule(target_dt)
 
         if rule is None:
-            continue  # beyond all rules — leave untouched
+            continue  # beyond all rules, leave untouched
 
         if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
             shutil.rmtree(path, ignore_errors=True)
@@ -457,37 +454,24 @@ def purge_old_data():
     print(f"[Purge] Removed {removed} tile set(s)")
 
 
-def scheduler_loop():
-    """Runs cleanup + auto_build_all + archive_old_data on startup and at each configured auto_build_time."""
-    print("[Scheduler] Running initial tasks on startup...")
+def _run_scheduled_tasks():
+    print("[Scheduler] Running scheduled tasks...")
     purge_old_data()
     auto_build_all()
 
+
+def scheduler_loop():
+    """Runs _run_scheduled_tasks on startup and at each configured auto_build_time."""
+    _run_scheduled_tasks()
+
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-
-        candidates = []
-        for entry in config.auto_build_time:
-            try:
-                hour, minute = map(int, entry.split(":"))
-            except ValueError:
-                continue
-            t = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if t <= now:
-                t += timedelta(days=1)
-            candidates.append(t)
-
-        if not candidates:
-            candidates = [now.replace(hour=2, minute=30, second=0, microsecond=0) + timedelta(days=1)]
-
-        next_run = min(candidates)
-        sleep_secs = (next_run - now).total_seconds()
+        times = [now.replace(hour=int(e[:2]), minute=int(e[3:]), second=0, microsecond=0)
+                 for e in config.auto_build_time]
+        next_run = next((t for t in times if t > now), times[0] + timedelta(days=1))
         print(f"[Scheduler] Next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
-        time.sleep(sleep_secs)
-
-        print("[Scheduler] Running scheduled tasks...")
-        purge_old_data()
-        auto_build_all()
+        time.sleep((next_run - now).total_seconds())
+        _run_scheduled_tasks()
 
 
 if __name__ == "__main__":
