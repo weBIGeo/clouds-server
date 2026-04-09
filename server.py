@@ -14,8 +14,6 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
 DWD_RUN_INTERVAL = 3
-MAX_FORECAST_STEP = 48
-HISTORY_WINDOW = 24
 
 app = Flask(__name__)
 CORS(app)
@@ -42,8 +40,8 @@ def fetch_run_steps(run_str, timeout=10):
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Window bounds for relevance
-    min_time = now - timedelta(hours=HISTORY_WINDOW)
-    max_time = now + timedelta(hours=MAX_FORECAST_STEP)
+    min_time = now - timedelta(days=config.history_days)
+    max_time = now + timedelta(days=config.forecast_days)
 
     # Parse run datetime; if invalid, return empty
     try:
@@ -54,7 +52,7 @@ def fetch_run_steps(run_str, timeout=10):
     # If the run cannot produce any target inside our window, do not fetch
     if run_dt > max_time:
         return set()
-    if run_dt + timedelta(hours=MAX_FORECAST_STEP) < min_time:
+    if run_dt + timedelta(days=config.forecast_days) < min_time:
         return set()
 
     # Check cache
@@ -118,7 +116,7 @@ def get_best_run_and_step(target_time):
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    for step in range(0, MAX_FORECAST_STEP + 1):
+    for step in range(0, config.forecast_days * 24 + 1):
         run_time = target_time - timedelta(hours=step)
 
         # Must align to configured run interval and not be in the future
@@ -166,32 +164,6 @@ def scan_existing_folders():
     return results
 
 
-def cleanup_old_data():
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=HISTORY_WINDOW)
-
-    folders = []
-    base_dir = os.path.abspath(config.output_dir)
-    if os.path.exists(base_dir):
-        folders = [
-            f
-            for f in os.listdir(base_dir)
-            if "_" in f and os.path.isdir(os.path.join(base_dir, f))
-        ]
-
-    for name in folders:
-        try:
-            r_str, s_str = name.split("_")
-            run_dt = datetime.strptime(r_str, "%Y%m%d%H")
-            step = int(s_str)
-            target = run_dt + timedelta(hours=step)
-
-            if target < cutoff:
-                task_key = (r_str, step)
-                if task_key in active_tasks:
-                    continue
-                shutil.rmtree(os.path.join(base_dir, name), ignore_errors=True)
-        except:
-            continue
 
 
 def worker_output_reader(process, task_key, log_file_path):
@@ -224,8 +196,6 @@ def worker_loop():
         run_dt, step = task
         run_str = run_dt.strftime("%Y%m%d%H")
         task_key = (run_str, step)
-
-        cleanup_old_data()
 
         folder_name = f"{run_str}_{step:03d}"
         output_dir = os.path.join(os.path.abspath(config.output_dir), folder_name)
@@ -368,108 +338,102 @@ def serve_tiles(filename):
 
 
 def auto_build_all():
-    """Queue generation for every available DWD slot that is not yet ready on disk."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
-    start = now - timedelta(hours=HISTORY_WINDOW)
-    end = now + timedelta(hours=MAX_FORECAST_STEP)
+    """Queue generation for configured time slots across past, current, and future days."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today = now.date()
+
+    # Build the list of target datetimes to ensure
+    targets = []
+    for d in range(1, config.history_days + 1):
+        day = today - timedelta(days=d)
+        for h in config.past_day_hours:
+            targets.append(datetime(day.year, day.month, day.day, h))
+    for h in config.current_day_hours:
+        targets.append(datetime(today.year, today.month, today.day, h))
+    for d in range(1, config.forecast_days + 1):
+        day = today + timedelta(days=d)
+        for h in config.future_day_hours:
+            targets.append(datetime(day.year, day.month, day.day, h))
 
     disk_state = scan_existing_folders()
     already_queued = set()
-    queued = 0
 
-    curr = start
-    while curr <= end:
-        time_id = curr.strftime("%Y%m%d%H")
-        best_run, best_step = get_best_run_and_step(curr)
-        if best_run:
-            best_run_str = best_run.strftime("%Y%m%d%H")
-            task_key = (best_run_str, best_step)
-
-            if task_key in already_queued:
-                curr += timedelta(hours=1)
-                continue
-
-            disk_entry = disk_state.get(time_id)
-            if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
-                curr += timedelta(hours=1)
-                continue
-
-            with processing_lock:
-                if task_key in task_progress:
-                    curr += timedelta(hours=1)
-                    continue
-
-            generation_queue.put((best_run, best_step))
-            already_queued.add(task_key)
-            queued += 1
-            print(f"[AutoBuild] Queued: run {best_run_str} +{best_step}h → target {time_id}")
-
-        curr += timedelta(hours=1)
-
-    print(f"[AutoBuild] Done — {queued} tile set(s) queued")
-
-
-def archive_old_data():
-    """For days older than archive_threshold_days, delete all folders except those
-    whose target hour is in archive_keep_hours."""
-    threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=config.archive_threshold_days)
-    keep_hours = set(config.archive_keep_hours)
-    base_dir = os.path.abspath(config.output_dir)
-
-    if not os.path.exists(base_dir):
-        return
-
-    removed = 0
-    for name in os.listdir(base_dir):
-        path = os.path.join(base_dir, name)
-        if not os.path.isdir(path) or "_" not in name:
-            continue
-        try:
-            r_str, s_str = name.split("_", 1)
-            run_dt = datetime.strptime(r_str, "%Y%m%d%H")
-            step = int(s_str)
-            target_dt = run_dt + timedelta(hours=step)
-
-            if target_dt >= threshold:
-                continue
-
-            if target_dt.hour in keep_hours:
-                continue
-
-            # Skip if an active task is still working on this folder
-            with processing_lock:
-                if (r_str, step) in task_progress:
-                    continue
-
-            shutil.rmtree(path, ignore_errors=True)
-            removed += 1
-        except (ValueError, Exception):
+    pending = []
+    for target_time in targets:
+        time_id = target_time.strftime("%Y%m%d%H")
+        best_run, best_step = get_best_run_and_step(target_time)
+        if not best_run:
             continue
 
-    print(f"[Archive] Removed {removed} old tile set(s) outside keep_hours={sorted(keep_hours)}")
+        best_run_str = best_run.strftime("%Y%m%d%H")
+        task_key = (best_run_str, best_step)
+
+        if task_key in already_queued:
+            continue
+
+        disk_entry = disk_state.get(time_id)
+        if disk_entry and disk_entry["ready"] and disk_entry["run"] == best_run:
+            continue
+
+        with processing_lock:
+            if task_key in task_progress:
+                continue
+
+        pending.append((best_run, best_step))
+        already_queued.add(task_key)
+        print(f"[AutoBuild] Queuing: run {best_run_str} +{best_step}h → target {time_id}")
+
+    for task in pending:
+        generation_queue.put(task)
+
+    print(f"[AutoBuild] Done — {len(pending)} tile set(s) queued")
 
 
-def cleanup_invalid_dirs():
-    """Delete directories left incomplete from an interrupted processing run."""
+def purge_old_data():
+    """Remove invalid dirs, thin past days to past_day_hours, and apply long-term purge."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today = now.date()
     base_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(base_dir):
         return
+
+    long_term_threshold = now - timedelta(days=config.purge_threshold_days)
+    today_start = datetime(today.year, today.month, today.day)
+    past_keep = set(config.past_day_hours)
+    long_term_keep = set(config.purge_keep_hours)
+
     removed = 0
-    for name in os.listdir(base_dir):
-        path = os.path.join(base_dir, name)
-        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "invalid")):
+    for entry in scan_existing_folders().values():
+        path = os.path.join(base_dir, entry["folder"])
+
+        with processing_lock:
+            if (entry["run"].strftime("%Y%m%d%H"), entry["step"]) in task_progress:
+                continue
+
+        if not entry["ready"]:
             shutil.rmtree(path, ignore_errors=True)
             removed += 1
-    if removed:
-        print(f"[Scheduler] Removed {removed} incomplete tile set(s)")
+            continue
+
+        target_dt = entry["run"] + timedelta(hours=entry["step"])
+
+        if target_dt < long_term_threshold:
+            if target_dt.hour not in long_term_keep:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        elif target_dt < today_start:
+            if target_dt.hour not in past_keep:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+
+    print(f"[Purge] Removed {removed} tile set(s)")
 
 
 def scheduler_loop():
     """Runs cleanup + auto_build_all + archive_old_data on startup and at each configured auto_build_time."""
     print("[Scheduler] Running initial tasks on startup...")
-    cleanup_invalid_dirs()
+    purge_old_data()
     auto_build_all()
-    archive_old_data()
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -494,9 +458,8 @@ def scheduler_loop():
         time.sleep(sleep_secs)
 
         print("[Scheduler] Running scheduled tasks...")
-        cleanup_invalid_dirs()
+        purge_old_data()
         auto_build_all()
-        archive_old_data()
 
 
 if __name__ == "__main__":
