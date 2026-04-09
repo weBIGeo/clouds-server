@@ -33,16 +33,40 @@ DWD_RUN_CACHE_LOCK = threading.Lock()
 DWD_FAIL_TTL = 60
 
 
+def get_scheme_rule(target_dt):
+    """Return the first matching scheme rule for target_dt, or None."""
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
+    day_offset = (target_dt.date() - today).days
+    for rule in config.tile_retention_policy:
+        if day_offset < rule["before"]:
+            return rule
+    return None
+
+
+def _scheme_fetch_window():
+    """Return (min_day_offset, max_day_offset) covering all fetch_and_purge rules."""
+    scheme = config.tile_retention_policy
+    fetch_indices = [i for i, r in enumerate(scheme) if r["mode"] in ("fetch_and_purge", "fetch_only")]
+    if not fetch_indices:
+        return 0, 0
+    first_i, last_i = fetch_indices[0], fetch_indices[-1]
+    lower = scheme[first_i - 1]["before"] if first_i > 0 else -9999
+    upper = scheme[last_i]["before"] - 1
+    return lower, upper
+
+
 def fetch_run_steps(run_str, timeout=10):
     """Return a set of available step integers for the given run_str (YYYYMMDDHH).
 
     If fetching or parsing fails, returns an empty set.
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today_dt = datetime(now.year, now.month, now.day)
+    lower_offset, upper_offset = _scheme_fetch_window()
 
     # Window bounds for relevance
-    min_time = now - timedelta(days=config.history_days)
-    max_time = now + timedelta(days=config.forecast_days)
+    min_time = today_dt + timedelta(days=lower_offset)
+    max_time = today_dt + timedelta(days=upper_offset + 1)
 
     # Parse run datetime; if invalid, return empty
     try:
@@ -53,7 +77,7 @@ def fetch_run_steps(run_str, timeout=10):
     # If the run cannot produce any target inside our window, do not fetch
     if run_dt > max_time:
         return set()
-    if run_dt + timedelta(days=config.forecast_days) < min_time:
+    if run_dt + timedelta(days=upper_offset + 1) < min_time:
         return set()
 
     # Check cache
@@ -117,7 +141,8 @@ def get_best_run_and_step(target_time):
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    for step in range(0, config.forecast_days * 24 + 1):
+    _, upper_offset = _scheme_fetch_window()
+    for step in range(0, upper_offset * 24 + 1):
         run_time = target_time - timedelta(hours=step)
 
         # Must align to configured run interval and not be in the future
@@ -349,18 +374,17 @@ def auto_build_all():
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = now.date()
 
-    # Build the list of target datetimes to ensure
+    # Build targets from all fetch_and_purge rules in the scheme
     targets = []
-    for d in range(1, config.history_days + 1):
-        day = today - timedelta(days=d)
-        for h in config.past_day_hours:
-            targets.append(datetime(day.year, day.month, day.day, h))
-    for h in config.current_day_hours:
-        targets.append(datetime(today.year, today.month, today.day, h))
-    for d in range(1, config.forecast_days + 1):
-        day = today + timedelta(days=d)
-        for h in config.future_day_hours:
-            targets.append(datetime(day.year, day.month, day.day, h))
+    scheme = config.tile_retention_policy
+    for i, rule in enumerate(scheme):
+        if rule["mode"] not in ("fetch_and_purge", "fetch_only"):
+            continue
+        lower = scheme[i - 1]["before"] if i > 0 else -9999
+        for day_offset in range(lower, rule["before"]):
+            day = today + timedelta(days=day_offset)
+            for h in rule["hours"]:
+                targets.append(datetime(day.year, day.month, day.day, h))
 
     disk_state = scan_existing_folders()
 
@@ -403,17 +427,10 @@ def auto_build_all():
 
 
 def purge_old_data():
-    """Remove invalid dirs, thin past days to past_day_hours, and apply long-term purge."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    today = now.date()
+    """Remove invalid dirs and apply the tile_retention_policy rules."""
     base_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(base_dir):
         return
-
-    long_term_threshold = now - timedelta(days=config.purge_threshold_days)
-    today_start = datetime(today.year, today.month, today.day)
-    past_keep = set(config.past_day_hours)
-    long_term_keep = set(config.purge_keep_hours)
 
     removed = 0
     for entry in scan_existing_folders().values():
@@ -429,15 +446,14 @@ def purge_old_data():
             continue
 
         target_dt = entry["run"] + timedelta(hours=entry["step"])
+        rule = get_scheme_rule(target_dt)
 
-        if target_dt < long_term_threshold:
-            if target_dt.hour not in long_term_keep:
-                shutil.rmtree(path, ignore_errors=True)
-                removed += 1
-        elif target_dt < today_start:
-            if target_dt.hour not in past_keep:
-                shutil.rmtree(path, ignore_errors=True)
-                removed += 1
+        if rule is None:
+            continue  # beyond all rules — leave untouched
+
+        if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
 
     print(f"[Purge] Removed {removed} tile set(s)")
 
