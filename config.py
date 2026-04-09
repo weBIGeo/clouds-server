@@ -5,6 +5,7 @@ output_dir = "tiles_output"
 port = 8000
 
 # If True, downloaded GRIB files are kept on disk after processing.
+# NOTE: Use only for debug purposes. Those files are very large
 keep_gribs = False
 
 # Number of parallel workers for downloading GRIB files from DWD.
