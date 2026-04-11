@@ -492,5 +492,5 @@ if __name__ == "__main__":
     else:
         logger.info("only_serve=True — no background threads started")
 
-    logger.info(f"Starting on http://{config.host}:{config.port}")
+    logger.info(f"Starting waitress server on http://{config.host}:{config.port}")
     serve(app, host=config.host, port=config.port)

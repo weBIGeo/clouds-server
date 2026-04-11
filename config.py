@@ -6,6 +6,17 @@ output_dir = "tiles_output"
 host = "127.0.0.1"
 port = 8000
 
+# Logging level. (e.g. DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_level = "DEBUG"
+
+# Per-logger level overrides. Use this to silence noisy third-party libraries
+log_level_overrides = {
+    "waitress": "ERROR",
+    "filelock": "ERROR",
+    "urllib3":  "ERROR",
+    "numba":    "WARNING",
+}
+
 # If True, downloaded GRIB files are kept on disk after processing.
 # NOTE: Use only for debug purposes. Those files are very large
 keep_gribs = False
@@ -21,8 +32,7 @@ download_workers = 16
 worker_threads = 3
 
 # Unified scheme controlling which tile sets are fetched and which are purged.
-# Rules are checked top-to-bottom; the first rule where the target's day offset
-# (relative to today) is less than "before" wins.
+# Rules are checked top-to-bottom
 tile_retention_policy = [
     { # Remove all tiles that are older than a year
         "before": -364,
@@ -59,6 +69,5 @@ tile_retention_policy = [
 auto_build_time = ["00:30", "07:30", "16:30"]
 
 # When True, no new tiles are fetched or generated and no old tiles are purged.
-# Only tiles that already exist on disk will be served. Useful for read-only /
-# static deployments where tile data is managed externally.
-only_serve = False
+# Only tiles that already exist on disk will be served.
+only_serve = True

@@ -1,5 +1,6 @@
 import logging
 import sys
+import config
 
 # ANSI color codes
 _RESET = "\x1b[0m"
@@ -72,9 +73,11 @@ class _WebiGeoFormatter(logging.Formatter):
         return f"{time_str} | {level_str} | {file_part:<25} | {msg}"
 
 
-def setup_logging(level: int = logging.DEBUG) -> None:
+def setup_logging() -> None:
     """Configure the root logger with weBIGeo-style colored formatting."""
     _try_enable_ansi_windows()
+
+    level = getattr(logging, config.log_level.upper(), logging.DEBUG)
 
     use_color = sys.stdout.isatty()
     handler = logging.StreamHandler(sys.stdout)
@@ -85,8 +88,5 @@ def setup_logging(level: int = logging.DEBUG) -> None:
     root.setLevel(level)
     root.addHandler(handler)
 
-    # Suppress noisy third-party loggers
-    logging.getLogger("waitress").setLevel(logging.INFO)
-    logging.getLogger("filelock").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("numba").setLevel(logging.WARNING)
+    for name, override in config.log_level_overrides.items():
+        logging.getLogger(name).setLevel(getattr(logging, override.upper(), logging.WARNING))
