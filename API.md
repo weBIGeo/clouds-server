@@ -4,6 +4,30 @@ All time values use the format `YYYYMMDDHH` (UTC).
 
 ---
 
+## `GET /status`
+
+Returns the current server status: what is actively being processed, what is queued, and when the next scheduled maintenance run is.
+
+**Response**
+
+```json
+{
+  "status": "working",
+  "next_maintenance": "2026-04-12T00:30:00Z",
+  "active": ["2026041212"],
+  "queued": ["2026041300", "2026041306"]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"idle"` when nothing is queued or active, otherwise `"working"` |
+| `next_maintenance` | ISO 8601 UTC datetime of the next scheduled purge + auto-build run |
+| `active` | Target IDs (`YYYYMMDDHH`) currently being processed |
+| `queued` | Target IDs (`YYYYMMDDHH`) waiting in the queue, sorted ascending |
+
+---
+
 ## `GET /available`
 
 Returns all ready tile sets currently on disk, sorted by time.

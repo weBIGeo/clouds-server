@@ -70,4 +70,4 @@ auto_build_time = ["00:30", "07:30", "16:30"]
 
 # When True, no new tiles are fetched or generated and no old tiles are purged.
 # Only tiles that already exist on disk will be served.
-only_serve = True
+only_serve = False

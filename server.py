@@ -25,6 +25,7 @@ pending_tasks_ready = threading.Event()
 active_tasks = set()
 processing_lock = threading.Lock()
 task_progress = {}
+next_maintenance: datetime | None = None
 
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
@@ -322,6 +323,27 @@ def worker_loop():
 
 
 
+@app.route("/status", methods=["GET"])
+def server_status():
+    with pending_tasks_lock:
+        queued_ids = sorted(pending_tasks.keys())
+
+    with processing_lock:
+        active_ids = sorted(
+            (datetime.strptime(run_str, "%Y%m%d%H") + timedelta(hours=step)).strftime("%Y%m%d%H")
+            for run_str, step in task_progress.keys()
+        )
+
+    is_working = bool(queued_ids or active_ids)
+
+    return jsonify({
+        "status": "working" if is_working else "idle",
+        "next_maintenance": next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if next_maintenance else None,
+        "active": active_ids,
+        "queued": queued_ids,
+    })
+
+
 @app.route("/available", methods=["GET"])
 def list_available():
     disk_state = scan_existing_folders()
@@ -459,24 +481,25 @@ def purge_old_data():
     logger.info(f"Purge: removed {removed} tile set(s)")
 
 
-def _run_scheduled_tasks():
-    logger.info("Scheduler: running scheduled tasks")
+def _run_maintenance():
+    logger.info("Scheduler: running maintenance")
     purge_old_data()
     auto_build_all()
 
 
 def scheduler_loop():
-    """Runs _run_scheduled_tasks on startup and at each configured auto_build_time."""
-    _run_scheduled_tasks()
+    """Runs _run_maintenance on startup and at each configured auto_build_time."""
+    global next_maintenance
+    _run_maintenance()
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         times = [now.replace(hour=int(e[:2]), minute=int(e[3:]), second=0, microsecond=0)
                  for e in config.auto_build_time]
-        next_run = next((t for t in times if t > now), times[0] + timedelta(days=1))
-        logger.info(f"Scheduler: next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
-        time.sleep((next_run - now).total_seconds())
-        _run_scheduled_tasks()
+        next_maintenance = next((t for t in times if t > now), times[0] + timedelta(days=1))
+        logger.info(f"Scheduler: next maintenance at {next_maintenance.strftime('%Y-%m-%d %H:%M')} UTC")
+        time.sleep((next_maintenance - now).total_seconds())
+        _run_maintenance()
 
 
 if __name__ == "__main__":
@@ -491,7 +514,7 @@ if __name__ == "__main__":
             threading.Thread(target=worker_loop, daemon=True, name=f"WorkerThread-{i}").start()
         threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
     else:
-        logger.info("only_serve=True — no background threads started")
+        logger.info("only_serve = True -> no background scheduler and worker started")
 
     logger.info(f"Starting waitress server on http://{config.host}:{config.port}")
     serve(app, host=config.host, port=config.port)
