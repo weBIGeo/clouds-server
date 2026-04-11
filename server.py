@@ -5,11 +5,16 @@ import subprocess
 import threading
 import re
 import time
+import logging
 import config
+import log_config
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
+from waitress import serve
+
+logger = logging.getLogger("server")
 
 app = Flask(__name__)
 CORS(app)
@@ -260,7 +265,7 @@ def worker_loop():
                 "percent": 0,
             }
 
-        print(f"[Server] Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
+        logger.info(f"Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
         start_time = time.monotonic()
         success = False
         try:
@@ -284,15 +289,15 @@ def worker_loop():
             reader_thread.join()
 
             if process.returncode != 0:
-                print(f"[Server] Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
+                logger.error(f"Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
             else:
                 os.remove(invalid_path)
                 elapsed = time.monotonic() - start_time
-                print(f"[Server] Done: run {run_str} +{step}h ({elapsed:.1f}s)")
+                logger.info(f"Done: run {run_str} +{step}h ({elapsed:.1f}s)")
                 success = True
 
         except Exception as e:
-            print(f"[Server] Error launching worker: {e}")
+            logger.error(f"Error launching worker: {e}")
         finally:
             with processing_lock:
                 task_progress.pop(task_key, None)
@@ -311,7 +316,7 @@ def worker_loop():
                     r2, s2 = name.split("_", 1)
                     if datetime.strptime(r2, "%Y%m%d%H") + timedelta(hours=int(s2)) == target_dt:
                         shutil.rmtree(path, ignore_errors=True)
-                        print(f"[Server] Removed stale folder: {name}")
+                        logger.debug(f"Removed stale folder: {name}")
                 except ValueError:
                     continue
 
@@ -410,12 +415,12 @@ def auto_build_all():
 
         if existing is not None:
             replaced += 1
-            print(f"[AutoBuild] Replaced: target {time_id} +{existing[1]}h → +{best_step}h")
+            logger.debug(f"AutoBuild replaced: target {time_id} +{existing[1]}h → +{best_step}h")
         else:
             added += 1
-            print(f"[AutoBuild] Queuing: run {best_run.strftime('%Y%m%d%H')} +{best_step}h → target {time_id}")
+            logger.debug(f"AutoBuild queuing: run {best_run.strftime('%Y%m%d%H')} +{best_step}h → target {time_id}")
 
-    print(f"[AutoBuild] Done: {added} added, {replaced} replaced")
+    logger.info(f"AutoBuild done: {added} added, {replaced} replaced")
     # Signal workers only after all tasks are queued so they see correct queue depths.
     with pending_tasks_lock:
         if pending_tasks:
@@ -451,11 +456,11 @@ def purge_old_data():
             shutil.rmtree(path, ignore_errors=True)
             removed += 1
 
-    print(f"[Purge] Removed {removed} tile set(s)")
+    logger.info(f"Purge: removed {removed} tile set(s)")
 
 
 def _run_scheduled_tasks():
-    print("[Scheduler] Running scheduled tasks...")
+    logger.info("Scheduler: running scheduled tasks")
     purge_old_data()
     auto_build_all()
 
@@ -469,18 +474,23 @@ def scheduler_loop():
         times = [now.replace(hour=int(e[:2]), minute=int(e[3:]), second=0, microsecond=0)
                  for e in config.auto_build_time]
         next_run = next((t for t in times if t > now), times[0] + timedelta(days=1))
-        print(f"[Scheduler] Next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
+        logger.info(f"Scheduler: next run at {next_run.strftime('%Y-%m-%d %H:%M')} UTC")
         time.sleep((next_run - now).total_seconds())
         _run_scheduled_tasks()
 
 
 if __name__ == "__main__":
+    log_config.setup_logging()
     output_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    for i in range(config.worker_threads):
-        threading.Thread(target=worker_loop, daemon=True, name=f"WorkerThread-{i}").start()
-    threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
+    if not config.only_serve:
+        for i in range(config.worker_threads):
+            threading.Thread(target=worker_loop, daemon=True, name=f"WorkerThread-{i}").start()
+        threading.Thread(target=scheduler_loop, daemon=True, name="SchedulerThread").start()
+    else:
+        logger.info("only_serve=True — no background threads started")
 
-    app.run(host="0.0.0.0", port=config.port, debug=False, use_reloader=False)
+    logger.info(f"Starting on http://{config.host}:{config.port}")
+    serve(app, host=config.host, port=config.port)

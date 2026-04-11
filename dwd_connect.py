@@ -1,3 +1,4 @@
+import logging
 import os
 import requests
 import bz2
@@ -11,10 +12,12 @@ from filelock import FileLock
 import config as server_config
 from util import report_progress
 
+logger = logging.getLogger("dwd")
+
 # Ensures only one set of tiles are downloadedat a time so concurrent worker processes don't
 # saturate bandwidth. The next job's download starts only after the current one finishes.
 # NOTE: Uses a lockfile because workers run as separate subprocesses
-_download_lock = FileLock(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".download.lock"))
+_download_lock = FileLock(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".download.lock"), poll_interval=1.0)
 
 # --- Configuration ---
 
@@ -151,7 +154,7 @@ class DWDDownloader:
             with self.session.get(url, stream=True, timeout=30) as r:
                 if r.status_code != 200:
                     # Some levels might not exist for some vars, or network error
-                    print(f"    [404/Error] {url}")
+                    logger.warning(f"HTTP {r.status_code}: {url}")
                     return False
 
                 with open(temp_bz2, "wb") as f:
@@ -166,7 +169,7 @@ class DWDDownloader:
             return True
 
         except Exception as e:
-            print(f"    [Exception] {url} -> {e}")
+            logger.error(f"Download error {url}: {e}")
             if os.path.exists(temp_bz2):
                 os.remove(temp_bz2)
             return False
@@ -184,16 +187,14 @@ class DWDDownloader:
         tasks = []
         results = {v: [] for v in vars_to_fetch}
 
-        print(
-            f"--- Starting Download: Run {run_dt.strftime('%Y-%m-%d %H:00')} +{step_hours}h ---"
-        )
+        logger.info(f"Download start: run {run_dt.strftime('%Y-%m-%d %H:00')} +{step_hours}h")
 
         start_time = time.time()
         # NOTE: _download_lock serializes downloads across concurrent worker threads.
         with _download_lock, ThreadPoolExecutor(max_workers=server_config.download_workers) as executor:
             for var_key in vars_to_fetch:
                 if var_key not in VAR_SPECS:
-                    print(f"Warning: Unknown variable {var_key}")
+                    logger.warning(f"Unknown variable: {var_key}")
                     continue
 
                 config = VAR_SPECS[var_key]
@@ -222,7 +223,7 @@ class DWDDownloader:
                     completed / total * 100,
                 )
 
-        print(f"\n-!- Download completed after {time.time() - start_time:.2f}s ---")
+        logger.info(f"Download completed in {time.time() - start_time:.2f}s")
         return results
 
 

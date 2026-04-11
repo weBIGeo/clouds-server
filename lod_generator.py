@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import json
@@ -13,6 +14,8 @@ from bc4 import BC4Compressor
 from io_ktx import Ktx2
 from numba import jit
 from util import report_progress
+
+logger = logging.getLogger("lod")
 
 
 @dataclass
@@ -82,8 +85,7 @@ class RawTileLoader:
             return {"density": density_f32, "meta": metadata}
 
         except Exception as e:
-            print(f"Error loading {filepath}: {e}")
-            traceback.print_exc()
+            logger.error(f"Error loading {filepath}: {e}", exc_info=True)
             return None
 
 
@@ -332,14 +334,14 @@ class LODGenerator:
 
     def run(self):
         """Main entry point for LOD generation."""
-        print(f"--- Starting LOD Generation ({self.start_zoom}-{self.max_zoom}) ---")
+        logger.info(f"Starting LOD generation (zoom {self.start_zoom}–{self.max_zoom})")
         report_progress("lod_generation", "", 0)
         start_time = time.time()
 
         # Scan for leaf tiles
         leaf_coords = self._scan_leaf_tiles()
         if not leaf_coords:
-            print("No raw leaf files found.")
+            logger.warning("No raw leaf files found")
             return
 
         # Calculate work
@@ -350,9 +352,7 @@ class LODGenerator:
             leaf_coords, self.start_zoom, self.max_zoom
         )
 
-        print(
-            f"Found {len(leaf_coords)} leaves. Total tiles to generate: {len(all_tiles)}"
-        )
+        logger.info(f"Found {len(leaf_coords)} leaves, {len(all_tiles)} tiles to generate")
 
         self.progress_tracker = ProgressTracker(len(all_tiles))
 
@@ -360,7 +360,7 @@ class LODGenerator:
         try:
             self._process_tree_roots(sorted(root_tiles))
         except KeyboardInterrupt:
-            print("\nCtrl+C detected! Shutting down...")
+            logger.warning("Ctrl+C detected — shutting down")
             self.stop_event.set()
             self.executor.shutdown(wait=False, cancel_futures=True)
             return
@@ -372,11 +372,11 @@ class LODGenerator:
         if self.config.analyze_error:
             self._print_error_summary()
 
-        print(f"-!- LOD Generation completed after {time.time() - start_time:.2f}s ---")
+        logger.info(f"LOD generation completed in {time.time() - start_time:.2f}s")
 
     def _scan_leaf_tiles(self) -> set:
         """Scan directory for leaf tile files at max_zoom."""
-        print(f"Scanning {self.data_dir} for zoom level {self.max_zoom} files...")
+        logger.debug(f"Scanning {self.data_dir} for zoom level {self.max_zoom} files")
 
         files = [f for f in os.listdir(self.data_dir) if f.endswith(".raw.zst")]
         leaf_coords = set()
@@ -419,8 +419,7 @@ class LODGenerator:
                 return None
             return self._recursive_build(z, x, y)
         except Exception:
-            print(f"\nError at {z}/{x}/{y}")
-            traceback.print_exc()
+            logger.error(f"Error at {z}/{x}/{y}", exc_info=True)
             return None
         finally:
             with self.thread_lock:
@@ -604,14 +603,14 @@ class LODGenerator:
                 )
                 self._tile_p99.append(p99)
             except Exception as e:
-                print(f"Warning: failed to compute error metrics for {filepath}: {e}")
+                logger.warning(f"Failed to compute error metrics for {filepath}: {e}")
 
         self.progress_tracker.increment()
 
     def _print_error_summary(self):
-        """Aggregate and print compression/quantization error statistics."""
+        """Aggregate and log compression/quantization error statistics."""
         if not self._tile_error_stats:
-            print("No compression error statistics collected.")
+            logger.info("No compression error statistics collected")
             return
 
         # Collect arrays of per-tile robust metrics
@@ -644,33 +643,35 @@ class LODGenerator:
         tiles_exceeding = float(np.count_nonzero(np.array(self._tile_p99) > self.config.max_density_value))
         tiles_fraction_exceeding = tiles_exceeding / len(self._tile_p99)
 
-        print("--- Compression / Quantization Summary ---")
-        print(f"Tiles analyzed: {len(self._tile_error_stats)}")
-        print(f"Current max_density_value: {self.config.max_density_value}")
-        print(f"Recommended max_density_value (median tile 99.9pct): {recommended:.3f}")
-        print(f"Tiles with values above current limit: {tiles_fraction_exceeding:.3%}")
-        print(f"Overall median abs error: {overall_median_abs:.6f}")
-        print(f"Overall p99 abs error (median of tiles): {overall_p99_abs:.6f}")
-        print(f"Overall trimmed max abs (p{self._trim_percentile} of per-tile max): {overall_trimmed_max_abs:.6f}")
-        print(f"Overall RMSE (mean per-tile): {overall_rmse:.6f}")
-        print(f"Overall MSE (mean per-tile): {overall_mse:.6f}")
-        print(f"Overall clipped fraction (avg per-tile): {overall_clipped_frac:.3%}")
-        print(f"Overall zero-loss fraction (avg per-tile): {overall_zero_loss_frac:.3%}")
-
-        # List top offending tiles (by tile p99 and by clipped fraction)
         top_n = 5
         sorted_by_p99 = sorted(self._tile_error_stats, key=lambda t: t["p99"], reverse=True)[:top_n]
         sorted_by_clipped = sorted(self._tile_error_stats, key=lambda t: t["clipped_fraction"], reverse=True)[:top_n]
 
-        print("Top tiles by data p99 (tile, p99):")
-        for t in sorted_by_p99:
-            print(f"  {t['tile']}: p99={t['p99']:.3f}, p99_abs={t['p99_abs']:.6f}, clipped={t['clipped_fraction']:.3%}")
+        top_p99_lines = "\n".join(
+            f"  {t['tile']}: p99={t['p99']:.3f}, p99_abs={t['p99_abs']:.6f}, clipped={t['clipped_fraction']:.3%}"
+            for t in sorted_by_p99
+        )
+        top_clipped_lines = "\n".join(
+            f"  {t['tile']}: clipped={t['clipped_fraction']:.3%}, p99={t['p99']:.3f}"
+            for t in sorted_by_clipped
+        )
 
-        print("Top tiles by clipped fraction (tile, clipped%):")
-        for t in sorted_by_clipped:
-            print(f"  {t['tile']}: clipped={t['clipped_fraction']:.3%}, p99={t['p99']:.3f}")
-
-        print("------------------------------------------")
+        logger.info(
+            f"Compression/Quantization Summary\n"
+            f"  Tiles analyzed:              {len(self._tile_error_stats)}\n"
+            f"  Current max_density_value:   {self.config.max_density_value}\n"
+            f"  Recommended max_density_value (median tile 99.9pct): {recommended:.3f}\n"
+            f"  Tiles above current limit:   {tiles_fraction_exceeding:.3%}\n"
+            f"  Overall median abs error:    {overall_median_abs:.6f}\n"
+            f"  Overall p99 abs error:       {overall_p99_abs:.6f}\n"
+            f"  Overall trimmed max abs:     {overall_trimmed_max_abs:.6f}\n"
+            f"  Overall RMSE:                {overall_rmse:.6f}\n"
+            f"  Overall MSE:                 {overall_mse:.6f}\n"
+            f"  Overall clipped fraction:    {overall_clipped_frac:.3%}\n"
+            f"  Overall zero-loss fraction:  {overall_zero_loss_frac:.3%}\n"
+            f"Top tiles by p99:\n{top_p99_lines}\n"
+            f"Top tiles by clipped fraction:\n{top_clipped_lines}"
+        )
 
 
 

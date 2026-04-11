@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import time
@@ -10,6 +11,8 @@ from io_ktx import Ktx2
 from bc4 import BC4Compressor
 from scipy.ndimage import gaussian_filter
 from util import MAX_ALTITUDE, report_progress
+
+logger = logging.getLogger("shadows")
 
 
 @dataclass
@@ -113,7 +116,7 @@ class ShadowMapGenerator:
             ).astype(np.float16)
 
         except Exception as e:
-            print(f"Error processing {filename}: {e}")
+            logger.error(f"Error processing {filename}: {e}")
             return None
 
     def generate(self, region: dict, output_path: str):
@@ -132,7 +135,7 @@ class ShadowMapGenerator:
         )
 
         if not tiles:
-            print("No tiles found for the specified region.")
+            logger.warning("No tiles found for the specified region")
             return
 
         min_x = min(t.x for t in tiles)
@@ -226,9 +229,11 @@ class ShadowMapGenerator:
 
         final_data = cropped[:, :, np.newaxis]
 
-        print("\nShadow Map Bounding Box (Web Mercator EPSG:3857):")
-        print(f"  Min: {bbox_min_x:.8f}, {bbox_min_y:.8f}, 0.0")
-        print(f"  Max: {bbox_max_x:.8f}, {bbox_max_y:.8f}, {MAX_ALTITUDE:.1f}")
+        logger.debug(
+            f"Shadow map bounding box (EPSG:3857): "
+            f"min=({bbox_min_x:.8f}, {bbox_min_y:.8f}, 0.0) "
+            f"max=({bbox_max_x:.8f}, {bbox_max_y:.8f}, {MAX_ALTITUDE:.1f})"
+        )
 
         Ktx2.save(
             data=final_data,
@@ -249,7 +254,7 @@ def generate_shadows(data_dir, output_path, crop_region, lod_config=None):
     start_time = time.time()
     generator = ShadowMapGenerator(data_dir, config)
     generator.generate(crop_region, output_path)
-    print(f"-!- Shadow Map Generation completed after {time.time() - start_time:.2f}s ---")
+    logger.info(f"Shadow map generation completed in {time.time() - start_time:.2f}s")
 
 
 def main():

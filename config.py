@@ -1,7 +1,9 @@
 # Directory where generated tile sets are stored.
 output_dir = "tiles_output"
 
-# Port the Flask server listens on.
+# Host and port the server listens on.
+# Use "0.0.0.0" to accept connections from any network interface.
+host = "127.0.0.1"
 port = 8000
 
 # If True, downloaded GRIB files are kept on disk after processing.
@@ -55,3 +57,8 @@ tile_retention_policy = [
 # The same tasks also run once immediately on server startup.
 # NOTE: ICON-D2 runs are every 3 hours starting at 00:00, but it takes some time until they are available
 auto_build_time = ["00:30", "07:30", "16:30"]
+
+# When True, no new tiles are fetched or generated and no old tiles are purged.
+# Only tiles that already exist on disk will be served. Useful for read-only /
+# static deployments where tile data is managed externally.
+only_serve = False
