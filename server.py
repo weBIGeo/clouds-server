@@ -326,21 +326,18 @@ def worker_loop():
 @app.route("/status", methods=["GET"])
 def server_status():
     with pending_tasks_lock:
-        queued_ids = sorted(pending_tasks.keys())
+        queued = sorted(f"{run_dt.strftime('%Y%m%d%H')}_{step:03d}" for run_dt, step in pending_tasks.values())
 
     with processing_lock:
-        active_ids = sorted(
-            (datetime.strptime(run_str, "%Y%m%d%H") + timedelta(hours=step)).strftime("%Y%m%d%H")
-            for run_str, step in task_progress.keys()
-        )
+        active = sorted(f"{run_str}_{step:03d}" for run_str, step in task_progress.keys())
 
-    is_working = bool(queued_ids or active_ids)
+    is_working = bool(queued or active)
 
     return jsonify({
         "status": "working" if is_working else "idle",
         "next_maintenance": next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if next_maintenance else None,
-        "active": active_ids,
-        "queued": queued_ids,
+        "active": active,
+        "queued": queued,
     })
 
 
