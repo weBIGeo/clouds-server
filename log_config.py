@@ -42,14 +42,8 @@ def _try_enable_ansi_windows() -> None:
     except Exception:
         pass
 
-
+## A formatter based on the one for the weBIGeo project (see https://github.com/weBIGeo/webigeo/blob/main/webgpu_app/util/error_logging.cpp)
 class _WebiGeoFormatter(logging.Formatter):
-    """
-    Colored log formatter styled after the weBIGeo C++ logging:
-      HH:MM:SS | Level    | file.py:line              | message
-    The left section (time, level, file) is colored per level.
-    Debug messages additionally render the message text in gray.
-    """
 
     def __init__(self, use_color: bool) -> None:
         super().__init__()
@@ -71,6 +65,28 @@ class _WebiGeoFormatter(logging.Formatter):
             return f"{left} {msg}"
 
         return f"{time_str} | {level_str} | {file_part:<25} | {msg}"
+
+
+_LOGO_GRAY  = "\x1b[38;5;245m"
+_LOGO_GREEN = "\x1b[32m"
+
+_LOGO_TEMPLATE = r"""
+%5        _    .  ,   .           .    *                             *         .
+%5    *  / \_ *  / \_     %1   .        ___ %2___%3 ___    .    %4 ___ _             _    %5       /\'__
+%5      /    \  /    \,   %1__ __ _____| _ )%2_ _%3/ __|___ ___ %4/ __| |___ _  _ __| |___%5 .   _/  /  \  *'.
+%5 .   /\/\  /\/ :' __ \_ %1\ V  V / -_) _ \%2| |%3 (_ / -_) _ \%4 (__| / _ \ || / _` (_-<%5  _^/  ^/    `--.
+%5    /    \/  \  _/  \-'\%1 \_/\_/\___|___/%2___%3\___\___\___/%4\___|_\___/\_,_\__,_/__/%5 /.' ^_   \_   .'\
+%2===================================================================================================%3"""
+
+
+def print_logo() -> None:
+    logo = _LOGO_TEMPLATE
+    logo = logo.replace("%1", _CYAN)
+    logo = logo.replace("%2", _LOGO_GRAY)
+    logo = logo.replace("%3", _RESET)
+    logo = logo.replace("%4", _LOGO_GREEN)
+    logo = logo.replace("%5", _LOGO_GRAY)
+    print(logo)
 
 
 def setup_logging() -> None:

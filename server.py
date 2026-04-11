@@ -481,6 +481,7 @@ def scheduler_loop():
 
 if __name__ == "__main__":
     log_config.setup_logging()
+    log_config.print_logo()
     output_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
