@@ -89,3 +89,4 @@ def setup_logging(level: int = logging.DEBUG) -> None:
     logging.getLogger("waitress").setLevel(logging.INFO)
     logging.getLogger("filelock").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("numba").setLevel(logging.WARNING)
