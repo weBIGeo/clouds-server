@@ -1,4 +1,6 @@
-# weBIGeo Cloud Server
+# ☁️ weBIGeo Cloud Server
+
+![Version](https://img.shields.io/badge/version-1.1-blue) ![License](https://img.shields.io/github/license/webigeo/clouds-server)
 
 Preprocessing server for real-time volumetric cloud rendering in the browser. Developed by **Wendelin Muth** as part of his bachelor thesis at TU Wien.
 
@@ -6,7 +8,7 @@ Preprocessing server for real-time volumetric cloud rendering in the browser. De
 > Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026
 > Supervisor: Manuela Waldner
 
-This server is built for the [weBIGeo](https://github.com/weBIGeo/webigeo) web-based geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into compressed tile hierarchies, and serves them for WebGPU-based ray-marching cloud rendering.
+This server is built for the [weBIGeo](https://github.com/weBIGeo/webigeo) web-based geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into compressed tile hierarchies, and serves them for ray-marching cloud rendering.
 
 ## Setup
 
@@ -21,9 +23,8 @@ conda install -c conda-forge eccodes cfgrib
 pip install -r requirements.txt
 ```
 
-
-
 ### no virtual environment
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -34,4 +35,4 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Configuration is managed in [`config.py`](config.py). See [`API.md`](API.md) for the full API reference.
+Configuration is managed and documented in [`config.py`](config.py). See [`API.md`](API.md) for the full API-Endpoint reference.
