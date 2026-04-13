@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import config
 
@@ -89,20 +90,30 @@ def print_logo() -> None:
     print(logo)
 
 
-def setup_logging() -> None:
+def setup_logging(log_file: str | None = None) -> None:
     """Configure the root logger with weBIGeo-style colored formatting."""
     _try_enable_ansi_windows()
 
     level = getattr(logging, config.log_level.upper(), logging.DEBUG)
 
     use_color = sys.stdout.isatty()
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(_WebiGeoFormatter(use_color=use_color))
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(_WebiGeoFormatter(use_color=use_color))
 
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(level)
-    root.addHandler(handler)
+    root.addHandler(console_handler)
+
+    if log_file and log_file != "":
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=config.log_file_max_bytes,
+            backupCount=config.log_file_backup_count,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(_WebiGeoFormatter(use_color=False))
+        root.addHandler(file_handler)
 
     for name, override in config.log_level_overrides.items():
         logging.getLogger(name).setLevel(getattr(logging, override.upper(), logging.WARNING))

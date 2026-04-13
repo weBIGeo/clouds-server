@@ -9,6 +9,15 @@ port = 8000
 # Logging level. (e.g. DEBUG, INFO, WARNING, ERROR, CRITICAL)
 log_level = "DEBUG"
 
+
+# NOTE: Logs for the tile creation progress are stored in the respective tile folders. The following values
+# only affect the server's own console log output.
+# Log file path. Set to empty string to disable file logging.
+log_file = "latest.log"
+# Log file rotation: maximum size per file in bytes and number of backup files to keep.
+log_file_max_bytes = 5 * 1024 * 1024  # 5 MB
+log_file_backup_count = 3
+
 # Per-logger level overrides. Use this to silence noisy third-party libraries
 log_level_overrides = {
     "waitress": "ERROR",

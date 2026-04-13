@@ -432,12 +432,13 @@ def auto_build_all():
                 continue  # already queued with same or better run
             pending_tasks[time_id] = (best_run, best_step)
 
+        folder = f"{best_run.strftime('%Y%m%d%H')}_{best_step:03d}"
         if existing is not None:
             replaced += 1
-            logger.debug(f"AutoBuild replaced: target {time_id} +{existing[1]}h → +{best_step}h")
+            logger.debug(f"AutoBuild: {folder} (target {time_id}, replaces +{existing[1]}h)")
         else:
             added += 1
-            logger.debug(f"AutoBuild queuing: run {best_run.strftime('%Y%m%d%H')} +{best_step}h → target {time_id}")
+            logger.debug(f"AutoBuild: {folder} (target {time_id})")
 
     logger.info(f"AutoBuild done: {added} added, {replaced} replaced")
     # Signal workers only after all tasks are queued so they see correct queue depths.
@@ -461,6 +462,7 @@ def purge_old_data():
                 continue
 
         if not entry["ready"]:
+            logger.debug(f"Purge: {entry['folder']} (invalid/incomplete)")
             shutil.rmtree(path, ignore_errors=True)
             removed += 1
             continue
@@ -472,6 +474,7 @@ def purge_old_data():
             continue  # beyond all rules, leave untouched
 
         if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
+            logger.debug(f"Purge: {entry['folder']} (hour {target_dt.hour} not in retention policy hours {rule['hours']})")
             shutil.rmtree(path, ignore_errors=True)
             removed += 1
 
@@ -500,8 +503,11 @@ def scheduler_loop():
 
 
 if __name__ == "__main__":
-    log_config.setup_logging()
+    log_config.setup_logging(log_file=config.log_file)
     log_config.print_logo()
+    logger.info(" ========================================= ")
+    logger.info(" === weBIGeo Cloud Server v1.1 started === ")
+    logger.info(" ========================================= ")
     output_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
