@@ -25,10 +25,9 @@ keep_gribs = False
 download_workers = 16
 
 # Number of tile-set jobs that can be processed concurrently.
-# Each job already uses many threads/GPU internally, so >1 only helps if you
-# have spare resources (e.g. one job downloading while another is processing).
-# NOTE: When >1, downloads are serialized so jobs naturally spread across
-# different pipeline stages (download vs. processing vs. saving).
+# NOTE: Each job depending on the step uses many threads/GPU internally, thats why in worker.py we use
+# several file locks to actually serialize the work per step again. Therefore A value above 5 might not make
+# a lot of sense and will probably not even affect the processing speed positively.
 worker_threads = 3
 
 # Unified scheme controlling which tile sets are fetched and which are purged.

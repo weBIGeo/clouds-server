@@ -715,5 +715,3 @@ class TileProcessor:
             future.result()
 
         self.save_thread_pool.shutdown(wait=True)
-        total_time = time.time() - start_time
-        logger.info(f"Upsampling completed in {total_time:.2f}s")

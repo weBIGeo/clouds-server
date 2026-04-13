@@ -1,7 +1,6 @@
 import logging
 import math
 import os
-import time
 import argparse
 import numpy as np
 import mercantile
@@ -251,10 +250,8 @@ def generate_shadows(data_dir, output_path, crop_region, lod_config=None):
         config.vertical_layers = lod_config.vertical_layers
         config.max_density = lod_config.max_density_value
 
-    start_time = time.time()
     generator = ShadowMapGenerator(data_dir, config)
     generator.generate(crop_region, output_path)
-    logger.info(f"Shadow map generation completed in {time.time() - start_time:.2f}s")
 
 
 def main():

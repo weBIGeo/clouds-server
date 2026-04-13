@@ -3,21 +3,14 @@ import os
 import requests
 import bz2
 import shutil
-import time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
-from filelock import FileLock
 import config as server_config
 from util import report_progress
 
 logger = logging.getLogger("dwd")
-
-# Ensures only one set of tiles are downloadedat a time so concurrent worker processes don't
-# saturate bandwidth. The next job's download starts only after the current one finishes.
-# NOTE: Uses a lockfile because workers run as separate subprocesses
-_download_lock = FileLock(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".download.lock"), poll_interval=1.0)
 
 # --- Configuration ---
 
@@ -189,9 +182,7 @@ class DWDDownloader:
 
         logger.info(f"Download start: run {run_dt.strftime('%Y-%m-%d %H:00')} +{step_hours}h")
 
-        start_time = time.time()
-        # NOTE: _download_lock serializes downloads across concurrent worker threads.
-        with _download_lock, ThreadPoolExecutor(max_workers=server_config.download_workers) as executor:
+        with ThreadPoolExecutor(max_workers=server_config.download_workers) as executor:
             for var_key in vars_to_fetch:
                 if var_key not in VAR_SPECS:
                     logger.warning(f"Unknown variable: {var_key}")
@@ -223,7 +214,6 @@ class DWDDownloader:
                     completed / total * 100,
                 )
 
-        logger.info(f"Download completed in {time.time() - start_time:.2f}s")
         return results
 
 
