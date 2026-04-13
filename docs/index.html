@@ -205,6 +205,148 @@
     .mb-section {
       margin-bottom: 1.5rem;
     }
+
+    /* Live status panel */
+    #live-status {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    #live-status .status-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+
+    #live-status .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8b949e;
+      flex-shrink: 0;
+    }
+
+    #live-status .status-dot.idle   { background: #3fb950; }
+    #live-status .status-dot.working { background: #f0883e; animation: pulse 1s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    #live-status .status-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #f0f6fc;
+      text-transform: capitalize;
+    }
+
+    #live-status .status-maintenance {
+      margin-left: auto;
+      font-size: 0.78rem;
+      color: #8b949e;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .task-item {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+    }
+
+    .task-item .task-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .task-item .task-id {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.82rem;
+      color: #79c0ff;
+    }
+
+    .task-item .task-stage {
+      font-size: 0.78rem;
+      color: #8b949e;
+    }
+
+    .task-item .task-detail {
+      font-size: 0.78rem;
+      color: #8b949e;
+      margin-bottom: 0.4rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .task-item .task-pct {
+      margin-left: auto;
+      font-size: 0.78rem;
+      color: #c9d1d9;
+      flex-shrink: 0;
+    }
+
+    .progress-bar-track {
+      height: 4px;
+      background: #21262d;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: #1f6feb;
+      border-radius: 2px;
+      transition: width 0.25s ease;
+    }
+
+    .queued-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
+    }
+
+    .queued-chip {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.75rem;
+      background: #21262d;
+      color: #8b949e;
+      border-radius: 4px;
+      padding: 0.15em 0.5em;
+    }
+
+    .live-sublabel {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      margin: 0.75rem 0 0.4rem;
+    }
+
+    #live-status .empty-note {
+      font-size: 0.82rem;
+      color: #484f58;
+    }
+
+    #active-section,
+    #queued-section,
+    #idle-note {
+      display: none;
+    }
   </style>
 </head>
 
@@ -235,6 +377,26 @@
       You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
     </p>
 
+    <div id="live-status">
+      <div class="status-header">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">connecting…</span>
+        <span class="status-maintenance" id="status-maintenance"></span>
+      </div>
+
+      <div id="active-section">
+        <div class="live-sublabel">Active</div>
+        <div class="task-list" id="active-list"></div>
+      </div>
+
+      <div id="queued-section">
+        <div class="live-sublabel">Queued</div>
+        <div class="queued-list" id="queued-list"></div>
+      </div>
+
+      <div id="idle-note" class="empty-note">No tasks active or queued.</div>
+    </div>
+
     <hr>
     <p class="mb-section">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
 
@@ -251,8 +413,15 @@
       <pre><code>{
   "status": "working",
   "next_maintenance": "2026-04-12T00:30:00Z",
-  "active": ["2026041212"],
-  "queued": ["2026041300", "2026041306"]
+  "active": {
+    "2026041312_001": {
+      "status": "pending",
+      "stage": "download",
+      "detail": "133/522 files processed",
+      "percent": 25
+    }
+  },
+  "queued": ["2026041300_006", "2026041306_000"]
 }</code></pre>
       <table>
         <tr>
@@ -269,11 +438,11 @@
         </tr>
         <tr>
           <td><code>active</code></td>
-          <td>Target IDs (<code>YYYYMMDDHH</code>) currently being processed</td>
+          <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) for each tile set currently being processed, each with <code>status</code>, <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td>
         </tr>
         <tr>
           <td><code>queued</code></td>
-          <td>Target IDs (<code>YYYYMMDDHH</code>) waiting in the queue, sorted ascending</td>
+          <td>Folder names (<code>YYYYMMDDHH_SSS</code>) waiting in the queue, sorted ascending</td>
         </tr>
       </table>
     </div>
@@ -344,6 +513,84 @@
 
     <p class="note">All other paths return <code>403 Forbidden</code>.</p>
   </div>
+
+  <script>
+    const dot        = document.getElementById('status-dot');
+    const label      = document.getElementById('status-label');
+    const maintenance= document.getElementById('status-maintenance');
+    const activeSection = document.getElementById('active-section');
+    const activeList    = document.getElementById('active-list');
+    const queuedSection = document.getElementById('queued-section');
+    const queuedList    = document.getElementById('queued-list');
+    const idleNote      = document.getElementById('idle-note');
+
+    function show(el) { el.style.display = 'block'; }
+    function hide(el) { el.style.display = 'none'; }
+
+    function applyStatus(data) {
+      const isWorking = data.status === 'working';
+      dot.className   = 'status-dot ' + data.status;
+      label.textContent = data.status;
+
+      maintenance.textContent = data.next_maintenance
+        ? 'Next maintenance: ' + data.next_maintenance.replace('T', ' ').replace('Z', ' UTC')
+        : '';
+
+      // Active tasks
+      const activeEntries = Object.entries(data.active || {});
+      if (activeEntries.length) {
+        activeEntries.sort((a, b) => a[0].localeCompare(b[0]));
+        activeList.innerHTML = activeEntries.map(([folder, p]) => `
+          <div class="task-item">
+            <div class="task-header">
+              <span class="task-id">${folder}</span>
+              <span class="task-stage">${p.stage || ''}</span>
+              <span class="task-pct">${p.percent ?? 0}%</span>
+            </div>
+            <div class="task-detail">${p.detail || ''}</div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" style="width:${p.percent ?? 0}%"></div>
+            </div>
+          </div>`).join('');
+        show(activeSection);
+      } else {
+        hide(activeSection);
+      }
+
+      // Queued tasks
+      const queued = data.queued || [];
+      if (queued.length) {
+        queuedList.innerHTML = queued.map(id => `<span class="queued-chip">${id}</span>`).join('');
+        show(queuedSection);
+      } else {
+        hide(queuedSection);
+      }
+
+      if (!activeEntries.length && !queued.length) {
+        show(idleNote);
+      } else {
+        hide(idleNote);
+      }
+    }
+
+    async function poll() {
+      try {
+        const res  = await fetch('/status');
+        const data = await res.json();
+        applyStatus(data);
+      } catch {
+        dot.className     = 'status-dot';
+        label.textContent = 'unreachable';
+        maintenance.textContent = '';
+        hide(activeSection);
+        hide(queuedSection);
+        hide(idleNote);
+      }
+    }
+
+    poll();
+    setInterval(poll, 500);
+  </script>
 </body>
 
 </html>
