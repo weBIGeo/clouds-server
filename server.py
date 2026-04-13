@@ -334,7 +334,10 @@ def server_status():
         queued = sorted(f"{run_dt.strftime('%Y%m%d%H')}_{step:03d}" for run_dt, step in pending_tasks.values())
 
     with processing_lock:
-        active = sorted(f"{run_str}_{step:03d}" for run_str, step in task_progress.keys())
+        active = {
+            f"{run_str}_{step:03d}": dict(progress)
+            for (run_str, step), progress in task_progress.items()
+        }
 
     is_working = bool(queued or active)
 

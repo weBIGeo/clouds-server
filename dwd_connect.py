@@ -206,6 +206,7 @@ class DWDDownloader:
             # Wait for completion and show progress
             total = len(tasks)
             completed = 0
+            report_progress("download", f"0/{total} files processed", 0)
             for _ in as_completed(tasks):
                 completed += 1
                 report_progress(
