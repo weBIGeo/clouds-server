@@ -1,3 +1,4 @@
+import logging
 import os
 import numpy as np
 import xarray as xr
@@ -7,6 +8,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Import config to know max levels
 from dwd_connect import VAR_SPECS
+
+logger = logging.getLogger("loader")
 
 
 @dataclass
@@ -121,7 +124,7 @@ def load_region(
     lon_min: float,
     lon_max: float,
 ) -> DataCube:
-    print("--- Loading and Stacking GRIBs ---")
+    logger.info("Loading and stacking GRIBs")
 
     # 1. Reference Logic
     ref_path = next((paths[0] for k, paths in download_results.items() if paths), None)
@@ -137,7 +140,7 @@ def load_region(
 
     ny = lat_slice.stop - lat_slice.start
     nx = lon_slice.stop - lon_slice.start
-    print(f"    Grid Crop: {nx}x{ny} pixels")
+    logger.debug(f"Grid crop: {nx}x{ny} pixels")
 
     stacked_data = {}
 
@@ -181,7 +184,7 @@ def load_region(
                     future = executor.submit(_read_worker, path, lat_slice, lon_slice)
                     future_to_idx[future] = z_idx
 
-            print(f"    Processing {var_key.upper()} ({len(future_to_idx)} tasks)...")
+            logger.debug(f"Processing {var_key.upper()} ({len(future_to_idx)} tasks)")
 
             # Collect Results
             for future in as_completed(future_to_idx):
@@ -194,5 +197,5 @@ def load_region(
 
             stacked_data[var_key] = arr_3d
 
-    print("    Stacking complete.")
+    logger.info("Stacking complete")
     return DataCube(stacked_data, (65, ny, nx), meta)

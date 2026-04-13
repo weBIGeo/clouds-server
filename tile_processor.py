@@ -1,3 +1,4 @@
+import logging
 import os
 import math
 import time
@@ -13,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 from icon_loader import DataCube
 from util import report_progress, MAX_ALTITUDE
 from scipy.ndimage import gaussian_filter1d
+
+logger = logging.getLogger("tiles")
 
 
 # --- CONFIGURATION ---
@@ -160,13 +163,13 @@ class CloudDataUploader:
     @staticmethod
     def upload_datacube(device: wgpu.GPUDevice, datacube) -> tuple:
         """Upload all required data fields as 3D textures."""
-        print("Uploading source data to GPU (Float16)...")
+        logger.info("Uploading source data to GPU (Float16)")
 
         texture_views = []
         for name in CloudDataUploader.DATA_FIELDS:
             data = datacube.data[name]
             nz, ny, nx = data.shape
-            print(f"  - {name}: shape={data.shape}, dtype={data.dtype}")
+            logger.debug(f"  {name}: shape={data.shape}, dtype={data.dtype}")
             texture = device.create_texture(
                 size=(nx, ny, nz),
                 usage=wgpu.TextureUsage.COPY_DST | wgpu.TextureUsage.TEXTURE_BINDING,
@@ -429,8 +432,7 @@ class TileSaver:
                     compressor.write(data.tobytes())
 
         except Exception:
-            print(f"Error saving tile {tile.z}/{tile.x}/{tile.y}!")
-            traceback.print_exc()
+            logger.error(f"Error saving tile {tile.z}/{tile.x}/{tile.y}", exc_info=True)
 
 
 class TileProcessor:
@@ -632,8 +634,7 @@ class TileProcessor:
                 del tile_data
 
         except Exception:
-            print("Error processing batch!")
-            traceback.print_exc()
+            logger.error("Error processing batch", exc_info=True)
 
     def run_tiled(self, zoom: int):
         """Generate tiles at specified zoom level."""
@@ -644,9 +645,7 @@ class TileProcessor:
         tiles = list(mercantile.tiles(lon_min, lat_min, lon_max, lat_max, zoom))
         batches = TileBatcher.create_batches(tiles, self.config)
 
-        print(
-            f"Processing {len(batches)} batches ({len(tiles)} tiles) at zoom {zoom}..."
-        )
+        logger.info(f"Processing {len(batches)} batches ({len(tiles)} tiles) at zoom {zoom}")
         report_progress("upsampling", "", 0)
         start_time = time.time()
         processed_count = 0
@@ -716,5 +715,3 @@ class TileProcessor:
             future.result()
 
         self.save_thread_pool.shutdown(wait=True)
-        total_time = time.time() - start_time
-        print(f"\nCompleted in {total_time:.2f}s")
