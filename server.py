@@ -323,6 +323,11 @@ def worker_loop():
 
 
 
+@app.route("/", methods=["GET"])
+def index():
+    return send_from_directory("docs", "index.html")
+
+
 @app.route("/status", methods=["GET"])
 def server_status():
     with pending_tasks_lock:

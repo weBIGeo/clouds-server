@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>weBIGeo Cloud Server v1.2</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #e6edf3;
+      background: #0d1117;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid #21262d;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2em 0.6em;
+      border-radius: 2em;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #1f6feb33;
+      color: #58a6ff;
+      border: 1px solid #1f6feb66;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f0f6fc;
+      margin: 2.5rem 0 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #21262d;
+    }
+
+    p {
+      color: #8b949e;
+      margin-bottom: 0.75rem;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.875em;
+      background: #161b22;
+      color: #79c0ff;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      border: 1px solid #21262d;
+    }
+
+    pre {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1rem;
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e6edf3;
+      font-size: 0.85rem;
+    }
+
+    .endpoint {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .endpoint-title {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .method {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #1a7f3740;
+      color: #3fb950;
+      border: 1px solid #1a7f3766;
+      padding: 0.2em 0.55em;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    .path {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.95rem;
+      color: #f0f6fc;
+    }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8b949e;
+      margin: 1rem 0 0.4rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid #21262d;
+    }
+
+    td {
+      padding: 0.5rem 0.75rem;
+      color: #c9d1d9;
+      border-bottom: 1px solid #21262d;
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .note {
+      font-size: 0.82rem;
+      color: #8b949e;
+      margin-top: 1rem;
+      padding: 0.6rem 0.9rem;
+      background: #161b22;
+      border-left: 3px solid #30363d;
+      border-radius: 0 6px 6px 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #21262d;
+      margin: 2rem 0;
+    }
+
+    a {
+      color: #58a6ff;
+    }
+
+    header .logo {
+      font-size: 1.8rem;
+    }
+
+    blockquote {
+      margin: 0.75rem 0;
+      padding: 0.6rem 1rem;
+      border-left: 3px solid #30363d;
+      color: #8b949e;
+      font-size: 0.875rem;
+    }
+
+    .mt-half {
+      margin-top: 0.5rem;
+    }
+
+    .mb-section {
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <span class="logo">☁️</span>
+      <h1>weBIGeo Cloud Server</h1>
+      <span class="badge">v1.2</span>
+    </header>
+
+    <p>Preprocessing server for real-time volumetric cloud rendering in the browser. Originally developed by
+      <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.
+    </p>
+    <blockquote>
+      <a href="https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/">Real-Time Volumetric Rendering
+        of Meteorological Cloud Data</a><br>
+      Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026<br>
+      Supervisor: Manuela Waldner
+    </blockquote>
+    <p>Built for the <a href="https://github.com/weBIGeo/webigeo">weBIGeo</a> web-based geographic visualization
+      project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into compressed tile hierarchies,
+      and serves them for WebGPU-based ray-marching cloud rendering.</p>
+    <p class="mt-half">The original codebase can be found <a
+        href="https://github.com/Qendolin/webigeo-clouds-server">here</a>. This server runs a production-ready
+      <a href="https://github.com/weBIGeo/clouds-server">variant</a> with customizable tile creation and purging
+      strategies developed by <strong>Gerald Kimmersdorfer</strong>.
+      You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
+    </p>
+
+    <hr>
+    <p class="mb-section">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
+
+    <h2>Endpoints</h2>
+
+    <div class="endpoint">
+      <div class="endpoint-title">
+        <span class="method">GET</span>
+        <span class="path">/status</span>
+      </div>
+      <p>Returns the current server status: what is actively being processed, what is queued, and when the next
+        scheduled maintenance run is.</p>
+      <div class="section-label">Response</div>
+      <pre><code>{
+  "status": "working",
+  "next_maintenance": "2026-04-12T00:30:00Z",
+  "active": ["2026041212"],
+  "queued": ["2026041300", "2026041306"]
+}</code></pre>
+      <table>
+        <tr>
+          <th>Field</th>
+          <th>Description</th>
+        </tr>
+        <tr>
+          <td><code>status</code></td>
+          <td><code>"idle"</code> when nothing is queued or active, otherwise <code>"working"</code></td>
+        </tr>
+        <tr>
+          <td><code>next_maintenance</code></td>
+          <td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td>
+        </tr>
+        <tr>
+          <td><code>active</code></td>
+          <td>Target IDs (<code>YYYYMMDDHH</code>) currently being processed</td>
+        </tr>
+        <tr>
+          <td><code>queued</code></td>
+          <td>Target IDs (<code>YYYYMMDDHH</code>) waiting in the queue, sorted ascending</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-title">
+        <span class="method">GET</span>
+        <span class="path">/available</span>
+      </div>
+      <p>Returns all ready tile sets currently on disk, sorted by time.</p>
+      <div class="section-label">Response</div>
+      <pre><code>{
+  "items": [
+    {
+      "id": "2026040812",
+      "status": "ready",
+      "run": "2026040809",
+      "step": 3,
+      "path": "/2026040809_003/"
+    },
+    ...
+  ]
+}</code></pre>
+      <table>
+        <tr>
+          <th>Field</th>
+          <th>Description</th>
+        </tr>
+        <tr>
+          <td><code>id</code></td>
+          <td>Target hour (<code>YYYYMMDDHH</code>)</td>
+        </tr>
+        <tr>
+          <td><code>status</code></td>
+          <td>Always <code>ready</code></td>
+        </tr>
+        <tr>
+          <td><code>run</code></td>
+          <td>Model run used (<code>YYYYMMDDHH</code>)</td>
+        </tr>
+        <tr>
+          <td><code>step</code></td>
+          <td>Forecast step (hours from run to target)</td>
+        </tr>
+        <tr>
+          <td><code>path</code></td>
+          <td>URL prefix for tile and shadow files</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-title">
+        <span class="method">GET</span>
+        <span class="path">/{folder}/tiles/{z}/{x}/{y}.ktx2</span>
+      </div>
+      <p>Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value of the <code>path</code> field returned
+        by <code>/available</code> (e.g. <code>2026040809_003</code>).</p>
+    </div>
+
+    <div class="endpoint">
+      <div class="endpoint-title">
+        <span class="method">GET</span>
+        <span class="path">/{folder}/shadow.ktx2</span>
+      </div>
+      <p>Serves the shadow map for the given tile set.</p>
+    </div>
+
+    <p class="note">All other paths return <code>403 Forbidden</code>.</p>
+  </div>
+</body>
+
+</html>
