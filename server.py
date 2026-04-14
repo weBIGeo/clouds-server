@@ -1,3 +1,22 @@
+#############################################################################
+# weBIGeo Clouds
+# Copyright (C) 2026 Wendelin Muth
+# Copyright (C) 2026 Gerald Kimmersdorfer
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#############################################################################
+
 import os
 import sys
 import shutil
@@ -323,13 +342,21 @@ def worker_loop():
 
 
 
+@app.route("/", methods=["GET"])
+def index():
+    return send_from_directory("docs", "index.html")
+
+
 @app.route("/status", methods=["GET"])
 def server_status():
     with pending_tasks_lock:
         queued = sorted(f"{run_dt.strftime('%Y%m%d%H')}_{step:03d}" for run_dt, step in pending_tasks.values())
 
     with processing_lock:
-        active = sorted(f"{run_str}_{step:03d}" for run_str, step in task_progress.keys())
+        active = {
+            f"{run_str}_{step:03d}": dict(progress)
+            for (run_str, step), progress in task_progress.items()
+        }
 
     is_working = bool(queued or active)
 
