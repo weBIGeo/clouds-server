@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>weBIGeo Cloud Server v1.2</title>
+  <title>weBIGeo Cloud Server</title>
   <style>
     *,
     *::before,
@@ -355,7 +355,7 @@
     <header>
       <span class="logo">☁️</span>
       <h1>weBIGeo Cloud Server</h1>
-      <span class="badge">v1.2</span>
+      <span class="badge" id="version-badge">…</span>
     </header>
 
     <p>Preprocessing server for real-time volumetric cloud rendering in the browser. Originally developed by
@@ -411,6 +411,7 @@
         scheduled maintenance run is.</p>
       <div class="section-label">Response</div>
       <pre><code>{
+  "version": "1.2",
   "status": "working",
   "next_maintenance": "2026-04-12T00:30:00Z",
   "active": {
@@ -429,6 +430,10 @@
           <th>Description</th>
         </tr>
         <tr>
+          <td><code>version</code></td>
+          <td>Server version string</td>
+        </tr>
+        <tr>
           <td><code>status</code></td>
           <td><code>"idle"</code> when nothing is queued or active, otherwise <code>"working"</code></td>
         </tr>
@@ -438,7 +443,7 @@
         </tr>
         <tr>
           <td><code>active</code></td>
-          <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) for each tile set currently being processed, each with <code>status</code>, <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td>
+          <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) for each tile set currently being processed, each with <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td>
         </tr>
         <tr>
           <td><code>queued</code></td>
@@ -515,6 +520,8 @@
   </div>
 
   <script>
+    const versionBadge = document.getElementById('version-badge');
+
     const dot        = document.getElementById('status-dot');
     const label      = document.getElementById('status-label');
     const maintenance= document.getElementById('status-maintenance');
@@ -575,8 +582,13 @@
 
     async function poll() {
       try {
-        const res  = await fetch('/status');
+        const res  = await fetch('./status');
         const data = await res.json();
+        if (data.version) {
+          const v = 'v' + data.version;
+          versionBadge.textContent = v;
+          document.title = 'weBIGeo Cloud Server ' + v;
+        }
         applyStatus(data);
       } catch {
         dot.className     = 'status-dot';

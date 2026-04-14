@@ -27,6 +27,7 @@ import time
 import logging
 import config
 import log_config
+import util
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, send_from_directory
@@ -34,6 +35,8 @@ from flask_cors import CORS
 from waitress import serve
 
 logger = logging.getLogger("server")
+
+VERSION = util.read_version()
 
 app = Flask(__name__)
 CORS(app)
@@ -361,6 +364,7 @@ def server_status():
     is_working = bool(queued or active)
 
     return jsonify({
+        "version": VERSION,
         "status": "working" if is_working else "idle",
         "next_maintenance": next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if next_maintenance else None,
         "active": active,
@@ -532,9 +536,11 @@ def scheduler_loop():
 if __name__ == "__main__":
     log_config.setup_logging(log_file=config.log_file)
     log_config.print_logo()
-    logger.info(" ========================================= ")
-    logger.info(" === weBIGeo Cloud Server v1.1 started === ")
-    logger.info(" ========================================= ")
+    msg = f" === weBIGeo Cloud Server v{VERSION} started === "
+    sep = " " + "=" * (len(msg) - 2) + " "
+    logger.info(sep)
+    logger.info(msg)
+    logger.info(sep)
     output_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

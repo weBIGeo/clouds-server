@@ -17,7 +17,23 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 from math import floor
+import os
+import re
 import sys
+
+
+# NOTE: The version is intentionally kept only in README.md. This function extracts it.
+# I know its weird, but its one single line of truth - and i keep forgetting to bump it.
+def read_version() -> str:
+    try:
+        readme = os.path.join(os.path.dirname(__file__), "README.md")
+        with open(readme, encoding="utf-8") as f:
+            m = re.search(r"img\.shields\.io/badge/version-([^-]+)-", f.read())
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return "unknown"
 
 # MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
 MAX_ALTITUDE = 14000.0  # Sensible maximum altitude
