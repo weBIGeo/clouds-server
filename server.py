@@ -49,6 +49,8 @@ active_tasks = set()
 processing_lock = threading.Lock()
 task_progress = {}
 next_maintenance: datetime | None = None
+maintenance_batches: list[dict] = []
+maintenance_batches_lock = threading.Lock()
 
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
@@ -327,6 +329,7 @@ def worker_loop():
                 task_progress.pop(task_key, None)
 
         # Remove any stale folders for the same target time
+        stale_removed = []
         if success:
             target_dt = run_dt + timedelta(hours=step)
             base_dir = os.path.abspath(config.output_dir)
@@ -341,8 +344,18 @@ def worker_loop():
                     if datetime.strptime(r2, "%Y%m%d%H") + timedelta(hours=int(s2)) == target_dt:
                         shutil.rmtree(path, ignore_errors=True)
                         logger.debug(f"Removed stale folder: {name}")
+                        stale_removed.append(name)
                 except ValueError:
                     continue
+
+        if stale_removed:
+            with maintenance_batches_lock:
+                for batch in maintenance_batches:
+                    if task_key in batch["task_keys"]:
+                        batch["renewed"].extend(stale_removed)
+                        break
+
+        _check_maintenance_completion()
 
 
 
@@ -450,7 +463,8 @@ def auto_build_all():
 
     disk_state = scan_existing_folders()
 
-    added = replaced = 0
+    added = 0
+    queued: list[tuple[str, tuple[str, int]]] = []
     for target_time in targets:
         time_id = target_time.strftime("%Y%m%d%H")
         best_run, best_step = get_best_run_and_step(target_time)
@@ -468,33 +482,30 @@ def auto_build_all():
             continue
 
         with pending_tasks_lock:
-            existing = pending_tasks.get(time_id)
-            if existing is not None and best_run <= existing[0]:
-                continue  # already queued with same or better run
+            if pending_tasks.get(time_id) is not None:
+                continue  # already queued, do not replace
             pending_tasks[time_id] = (best_run, best_step)
 
         folder = f"{best_run.strftime('%Y%m%d%H')}_{best_step:03d}"
-        if existing is not None:
-            replaced += 1
-            logger.debug(f"AutoBuild: {folder} (target {time_id}, replaces +{existing[1]}h)")
-        else:
-            added += 1
-            logger.debug(f"AutoBuild: {folder} (target {time_id})")
+        queued.append((folder, task_key))
+        added += 1
+        logger.debug(f"AutoBuild: {folder} (target {time_id})")
 
-    logger.info(f"AutoBuild done: {added} added, {replaced} replaced")
+    logger.info(f"AutoBuild done: {added} added")
     # Signal workers only after all tasks are queued so they see correct queue depths.
     with pending_tasks_lock:
         if pending_tasks:
             pending_tasks_ready.set()
+    return queued
 
 
 def purge_old_data():
     """Remove invalid dirs and apply the tile_retention_policy rules."""
     base_dir = os.path.abspath(config.output_dir)
     if not os.path.exists(base_dir):
-        return
+        return []
 
-    removed = 0
+    purged: list[str] = []
     for entry in scan_existing_folders().values():
         path = os.path.join(base_dir, entry["folder"])
 
@@ -505,7 +516,7 @@ def purge_old_data():
         if not entry["ready"]:
             logger.debug(f"Purge: {entry['folder']} (invalid/incomplete)")
             shutil.rmtree(path, ignore_errors=True)
-            removed += 1
+            purged.append(entry["folder"])
             continue
 
         target_dt = entry["run"] + timedelta(hours=entry["step"])
@@ -517,15 +528,57 @@ def purge_old_data():
         if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
             logger.debug(f"Purge: {entry['folder']} (hour {target_dt.hour} not in retention policy hours {rule['hours']})")
             shutil.rmtree(path, ignore_errors=True)
-            removed += 1
+            purged.append(entry["folder"])
 
-    logger.info(f"Purge: removed {removed} tile set(s)")
+    logger.info(f"Purge: removed {len(purged)} tile set(s)")
+    return purged
+
+
+def _check_maintenance_completion():
+    """Called by worker_loop after each task finishes. Logs and removes any batch whose tasks are all done."""
+    with pending_tasks_lock:
+        pending_keys = {(rd.strftime("%Y%m%d%H"), s) for rd, s in pending_tasks.values()}
+    with processing_lock:
+        active_keys = set(task_progress.keys())
+    still_running = pending_keys | active_keys
+
+    with maintenance_batches_lock:
+        done = [b for b in maintenance_batches if not (b["task_keys"] & still_running)]
+        for b in done:
+            maintenance_batches.remove(b)
+
+    for batch in done:
+        elapsed     = (time.monotonic() - batch["start_time"]) / 60
+        added_str   = ", ".join(batch["folder_names"]) or "none"
+        purged_str  = ", ".join(batch["purged"])        or "none"
+        renewed_str = ", ".join(batch["renewed"])       or "none"
+        logger.info("Maintenance completed in {elapsed:.1f}min")
+        public_log.append(f"Maintenance completed in {elapsed:.1f}min:\n - {len(batch['folder_names'])} added ({added_str})\n - {len(batch['purged'])} purged ({purged_str})\n - {len(batch['renewed'])} renewed ({renewed_str})")
 
 
 def _run_maintenance():
+    start_time = time.monotonic()
     logger.info("Scheduler: running maintenance")
-    purge_old_data()
-    auto_build_all()
+    purged_folders = purge_old_data()
+    queued = auto_build_all()
+    if queued:
+        with maintenance_batches_lock:
+            maintenance_batches.append({
+                "task_keys":    {tk for _, tk in queued},
+                "folder_names": [f  for f,  _ in queued],
+                "purged":       purged_folders,
+                "renewed":      [],
+                "start_time":   start_time,
+            })
+    else:
+        elapsed    = (time.monotonic() - start_time) / 60
+        purged_str = ", ".join(purged_folders) or "none"
+        summary = f"Maintenance completed in {elapsed:.1f}min:"
+        logger.info(summary)
+        public_log.append(f"{summary}\n"
+                          f" - 0 added (none)\n"
+                          f" - {len(purged_folders)} purged ({purged_str})\n"
+                          f" - 0 renewed (none)")
 
 
 def scheduler_loop():
