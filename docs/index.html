@@ -1,608 +1,353 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>weBIGeo Cloud Server</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      display: inline-block; background: #6c757d;
     }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 15px;
-      line-height: 1.6;
-      color: #e6edf3;
-      background: #0d1117;
-      padding: 2rem 1rem 4rem;
-    }
-
-    .container {
-      max-width: 860px;
-      margin: 0 auto;
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 2rem;
-      padding-bottom: 1.25rem;
-      border-bottom: 1px solid #21262d;
-    }
-
-    header h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: #f0f6fc;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 0.2em 0.6em;
-      border-radius: 2em;
-      font-size: 0.75rem;
-      font-weight: 600;
-      background: #1f6feb33;
-      color: #58a6ff;
-      border: 1px solid #1f6feb66;
-    }
-
-    h2 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #f0f6fc;
-      margin: 2.5rem 0 0.75rem;
-      padding-bottom: 0.4rem;
-      border-bottom: 1px solid #21262d;
-    }
-
-    p {
-      color: #8b949e;
-      margin-bottom: 0.75rem;
-    }
-
-    code {
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 0.875em;
-      background: #161b22;
-      color: #79c0ff;
-      padding: 0.15em 0.4em;
-      border-radius: 4px;
-      border: 1px solid #21262d;
-    }
-
-    pre {
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      overflow-x: auto;
-      margin: 0.75rem 0 1rem;
-    }
-
-    pre code {
-      background: none;
-      border: none;
-      padding: 0;
-      color: #e6edf3;
-      font-size: 0.85rem;
-    }
-
-    .endpoint {
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 10px;
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .endpoint-title {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      margin-bottom: 0.6rem;
-    }
-
-    .method {
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 0.75rem;
-      font-weight: 700;
-      background: #1a7f3740;
-      color: #3fb950;
-      border: 1px solid #1a7f3766;
-      padding: 0.2em 0.55em;
-      border-radius: 4px;
-      letter-spacing: 0.05em;
-    }
-
-    .path {
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 0.95rem;
-      color: #f0f6fc;
-    }
-
-    .section-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #8b949e;
-      margin: 1rem 0 0.4rem;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.875rem;
-      margin-top: 0.5rem;
-    }
-
-    th {
-      text-align: left;
-      padding: 0.5rem 0.75rem;
-      color: #8b949e;
-      font-weight: 600;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      border-bottom: 1px solid #21262d;
-    }
-
-    td {
-      padding: 0.5rem 0.75rem;
-      color: #c9d1d9;
-      border-bottom: 1px solid #21262d;
-      vertical-align: top;
-    }
-
-    tr:last-child td {
-      border-bottom: none;
-    }
-
-    .note {
-      font-size: 0.82rem;
-      color: #8b949e;
-      margin-top: 1rem;
-      padding: 0.6rem 0.9rem;
-      background: #161b22;
-      border-left: 3px solid #30363d;
-      border-radius: 0 6px 6px 0;
-    }
-
-    hr {
-      border: none;
-      border-top: 1px solid #21262d;
-      margin: 2rem 0;
-    }
-
-    a {
-      color: #58a6ff;
-    }
-
-    header .logo {
-      font-size: 1.8rem;
-    }
-
-    blockquote {
-      margin: 0.75rem 0;
-      padding: 0.6rem 1rem;
-      border-left: 3px solid #30363d;
-      color: #8b949e;
-      font-size: 0.875rem;
-    }
-
-    .mt-half {
-      margin-top: 0.5rem;
-    }
-
-    .mb-section {
-      margin-bottom: 1.5rem;
-    }
-
-    /* Live status panel */
-    #live-status {
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 10px;
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 2rem;
-    }
-
-    #live-status .status-header {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      margin-bottom: 1rem;
-    }
-
-    #live-status .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #8b949e;
-      flex-shrink: 0;
-    }
-
-    #live-status .status-dot.idle   { background: #3fb950; }
-    #live-status .status-dot.working { background: #f0883e; animation: pulse 1s ease-in-out infinite; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
-
-    #live-status .status-label {
-      font-weight: 600;
-      font-size: 0.9rem;
-      color: #f0f6fc;
-      text-transform: capitalize;
-    }
-
-    #live-status .status-maintenance {
-      margin-left: auto;
-      font-size: 0.78rem;
-      color: #8b949e;
-    }
-
-    .task-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
-    }
-
-    .task-item {
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      padding: 0.6rem 0.9rem;
-    }
-
-    .task-item .task-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.35rem;
-    }
-
-    .task-item .task-id {
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 0.82rem;
-      color: #79c0ff;
-    }
-
-    .task-item .task-stage {
-      font-size: 0.78rem;
-      color: #8b949e;
-    }
-
-    .task-item .task-detail {
-      font-size: 0.78rem;
-      color: #8b949e;
-      margin-bottom: 0.4rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .task-item .task-pct {
-      margin-left: auto;
-      font-size: 0.78rem;
-      color: #c9d1d9;
-      flex-shrink: 0;
-    }
-
-    .progress-bar-track {
-      height: 4px;
-      background: #21262d;
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: #1f6feb;
-      border-radius: 2px;
-      transition: width 0.25s ease;
-    }
-
-    .queued-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-      margin-top: 0.5rem;
-    }
-
-    .queued-chip {
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 0.75rem;
-      background: #21262d;
-      color: #8b949e;
-      border-radius: 4px;
-      padding: 0.15em 0.5em;
-    }
-
-    .live-sublabel {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #8b949e;
-      margin: 0.75rem 0 0.4rem;
-    }
-
-    #live-status .empty-note {
-      font-size: 0.82rem;
-      color: #484f58;
-    }
-
-    #active-section,
-    #queued-section,
-    #idle-note {
-      display: none;
-    }
+    .status-dot.idle    { background: #3fb950; }
+    .status-dot.working { background: #f0883e; animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .log-msg { white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <header>
-      <span class="logo">☁️</span>
-      <h1>weBIGeo Cloud Server</h1>
-      <span class="badge" id="version-badge">…</span>
-    </header>
+<div class="container py-4" style="max-width:860px">
 
-    <p>Preprocessing server for real-time volumetric cloud rendering in the browser. Originally developed by
-      <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.
-    </p>
-    <blockquote>
-      <a href="https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/">Real-Time Volumetric Rendering
-        of Meteorological Cloud Data</a><br>
-      Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026<br>
-      Supervisor: Manuela Waldner
-    </blockquote>
-    <p>Built for the <a href="https://github.com/weBIGeo/webigeo">weBIGeo</a> web-based geographic visualization
-      project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into compressed tile hierarchies,
-      and serves them for WebGPU-based ray-marching cloud rendering.</p>
-    <p class="mt-half">The original codebase can be found <a
-        href="https://github.com/Qendolin/webigeo-clouds-server">here</a>. This server runs a production-ready
-      <a href="https://github.com/weBIGeo/clouds-server">variant</a> with customizable tile creation and purging
-      strategies developed by <strong>Gerald Kimmersdorfer</strong>.
-      You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
-    </p>
+  <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
+    <span style="font-size:1.8rem">☁️</span>
+    <h1 class="fs-4 fw-semibold mb-0">weBIGeo Cloud Server</h1>
+    <span class="badge rounded-pill text-bg-primary ms-1" id="version-badge">…</span>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="fw-semibold text-capitalize small" id="status-label">connecting…</span>
+    </div>
+  </div>
 
-    <div id="live-status">
-      <div class="status-header">
-        <span class="status-dot" id="status-dot"></span>
-        <span class="status-label" id="status-label">connecting…</span>
-        <span class="status-maintenance" id="status-maintenance"></span>
-      </div>
+  <!-- ── STORAGE + MAINTENANCE ────────────────────────────────────────────── -->
+  <div class="mb-3">
+    <div class="d-flex justify-content-between small text-secondary mb-1">
+      <span>Storage Capacity</span>
+      <span id="cache-size-label">…</span>
+    </div>
+    <div class="progress mb-2" style="height:6px">
+      <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
+    </div>
+    <div class="small text-secondary" id="status-maintenance"></div>
+  </div>
 
-      <div id="active-section">
-        <div class="live-sublabel">Active</div>
-        <div class="task-list" id="active-list"></div>
-      </div>
+  <!-- ── ACTIVE TASKS (visible only while working) ────────────────────────── -->
+  <div id="active-tasks-section" style="display:none" class="mb-4">
+    <div class="text-uppercase small fw-semibold text-secondary mb-2">Active Tasks</div>
+    <div id="active-list" class="d-flex flex-column gap-2 mb-2"></div>
+    <div id="queued-section" style="display:none">
+      <div class="text-uppercase small fw-semibold text-secondary mt-2 mb-1">Queued</div>
+      <div id="queued-list" class="d-flex flex-wrap gap-1"></div>
+    </div>
+  </div>
 
-      <div id="queued-section">
-        <div class="live-sublabel">Queued</div>
-        <div class="queued-list" id="queued-list"></div>
-      </div>
+  <!-- ── TABS ─────────────────────────────────────────────────────────────── -->
+  <ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-about" role="tab">About</button></li>
+    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-log"   role="tab">Event Log</button></li>
+    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-api"   role="tab">API</button></li>
+    <li class="nav-item ms-auto align-items-center d-none" id="log-refresh-item">
+      <button class="btn btn-sm btn-outline-secondary" id="log-refresh-btn">Refresh</button>
+    </li>
+  </ul>
 
-      <div id="idle-note" class="empty-note">No tasks active or queued.</div>
+  <div class="tab-content">
+
+    <!-- ── ABOUT ───────────────────────────────────────────────────────────── -->
+    <div class="tab-pane fade show active" id="tab-about" role="tabpanel">
+      <p class="text-secondary">Preprocessing server for real-time volumetric cloud rendering in the browser.
+        Originally developed by <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.</p>
+      <blockquote class="border-start border-secondary ps-3 text-secondary small my-3">
+        <a href="https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/">Real-Time Volumetric Rendering
+          of Meteorological Cloud Data</a><br>
+        Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026<br>
+        Supervisor: Manuela Waldner
+      </blockquote>
+      <p class="text-secondary">Built for the <a href="https://github.com/weBIGeo/webigeo">weBIGeo</a> web-based
+        geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into
+        compressed tile hierarchies, and serves them for WebGPU-based ray-marching cloud rendering.</p>
+      <p class="text-secondary">The original codebase can be found
+        <a href="https://github.com/Qendolin/webigeo-clouds-server">here</a>. This server runs a production-ready
+        <a href="https://github.com/weBIGeo/clouds-server">variant</a> with customizable tile creation and purging
+        strategies developed by <strong>Gerald Kimmersdorfer</strong>.
+        You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
+      </p>
     </div>
 
-    <hr>
-    <p class="mb-section">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
-
-    <h2>Endpoints</h2>
-
-    <div class="endpoint">
-      <div class="endpoint-title">
-        <span class="method">GET</span>
-        <span class="path">/status</span>
+    <!-- ── EVENT LOG ───────────────────────────────────────────────────────── -->
+    <div class="tab-pane fade" id="tab-log" role="tabpanel">
+      <div id="log-entries">
+        <div class="text-secondary small py-2">No entries.</div>
       </div>
-      <p>Returns the current server status: what is actively being processed, what is queued, and when the next
-        scheduled maintenance run is.</p>
-      <div class="section-label">Response</div>
-      <pre><code>{
+    </div>
+
+    <!-- ── API ─────────────────────────────────────────────────────────────── -->
+    <div class="tab-pane fade" id="tab-api" role="tabpanel">
+      <p class="text-secondary small mb-3">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
+
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+          <code>/status</code>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary small">Returns the current server status: what is actively being processed, what is
+            queued, and when the next scheduled maintenance run is.</p>
+          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+          <pre class="border rounded p-3 small mb-3"><code>{
   "version": "1.2",
   "status": "working",
   "next_maintenance": "2026-04-12T00:30:00Z",
   "active": {
-    "2026041312_001": {
-      "status": "pending",
-      "stage": "download",
-      "detail": "133/522 files processed",
-      "percent": 25
-    }
+    "2026041312_001": { "status": "pending", "stage": "download", "detail": "133/522 files", "percent": 25 }
   },
   "queued": ["2026041300_006", "2026041306_000"]
 }</code></pre>
-      <table>
-        <tr>
-          <th>Field</th>
-          <th>Description</th>
-        </tr>
-        <tr>
-          <td><code>version</code></td>
-          <td>Server version string</td>
-        </tr>
-        <tr>
-          <td><code>status</code></td>
-          <td><code>"idle"</code> when nothing is queued or active, otherwise <code>"working"</code></td>
-        </tr>
-        <tr>
-          <td><code>next_maintenance</code></td>
-          <td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td>
-        </tr>
-        <tr>
-          <td><code>active</code></td>
-          <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) for each tile set currently being processed, each with <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td>
-        </tr>
-        <tr>
-          <td><code>queued</code></td>
-          <td>Folder names (<code>YYYYMMDDHH_SSS</code>) waiting in the queue, sorted ascending</td>
-        </tr>
-      </table>
-    </div>
-
-    <div class="endpoint">
-      <div class="endpoint-title">
-        <span class="method">GET</span>
-        <span class="path">/available</span>
+          <table class="table table-sm small mb-0">
+            <thead><tr><th>Field</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>version</code></td><td>Server version string</td></tr>
+              <tr><td><code>status</code></td><td><code>"idle"</code> or <code>"working"</code></td></tr>
+              <tr><td><code>next_maintenance</code></td><td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td></tr>
+              <tr><td><code>active</code></td><td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td></tr>
+              <tr><td><code>queued</code></td><td>Folder names waiting in the queue, sorted ascending</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p>Returns all ready tile sets currently on disk, sorted by time.</p>
-      <div class="section-label">Response</div>
-      <pre><code>{
+
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+          <code>/available</code>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary small">Returns all ready tile sets currently on disk, sorted by time.</p>
+          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+          <pre class="border rounded p-3 small mb-3"><code>{
   "items": [
-    {
-      "id": "2026040812",
-      "status": "ready",
-      "run": "2026040809",
-      "step": 3,
-      "path": "/2026040809_003/"
-    },
-    ...
+    { "id": "2026040812", "status": "ready", "run": "2026040809", "step": 3, "path": "/2026040809_003/" }
   ]
 }</code></pre>
-      <table>
-        <tr>
-          <th>Field</th>
-          <th>Description</th>
-        </tr>
-        <tr>
-          <td><code>id</code></td>
-          <td>Target hour (<code>YYYYMMDDHH</code>)</td>
-        </tr>
-        <tr>
-          <td><code>status</code></td>
-          <td>Always <code>ready</code></td>
-        </tr>
-        <tr>
-          <td><code>run</code></td>
-          <td>Model run used (<code>YYYYMMDDHH</code>)</td>
-        </tr>
-        <tr>
-          <td><code>step</code></td>
-          <td>Forecast step (hours from run to target)</td>
-        </tr>
-        <tr>
-          <td><code>path</code></td>
-          <td>URL prefix for tile and shadow files</td>
-        </tr>
-      </table>
-    </div>
-
-    <div class="endpoint">
-      <div class="endpoint-title">
-        <span class="method">GET</span>
-        <span class="path">/{folder}/tiles/{z}/{x}/{y}.ktx2</span>
+          <table class="table table-sm small mb-0">
+            <thead><tr><th>Field</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>Target hour (<code>YYYYMMDDHH</code>)</td></tr>
+              <tr><td><code>status</code></td><td>Always <code>"ready"</code></td></tr>
+              <tr><td><code>run</code></td><td>Model run used (<code>YYYYMMDDHH</code>)</td></tr>
+              <tr><td><code>step</code></td><td>Forecast step (hours from run to target)</td></tr>
+              <tr><td><code>path</code></td><td>URL prefix for tile and shadow files</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p>Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value of the <code>path</code> field returned
-        by <code>/available</code> (e.g. <code>2026040809_003</code>).</p>
-    </div>
 
-    <div class="endpoint">
-      <div class="endpoint-title">
-        <span class="method">GET</span>
-        <span class="path">/{folder}/shadow.ktx2</span>
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+          <code>/log</code>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary small">Returns the public event log. Entries are returned oldest-first.</p>
+          <p class="text-uppercase small fw-semibold text-secondary mb-1">Query Parameters</p>
+          <table class="table table-sm small mb-3">
+            <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>since</code></td><td><code>604800</code></td><td>How far back to look, in seconds (default: 7 days)</td></tr>
+            </tbody>
+          </table>
+          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+          <pre class="border rounded p-3 small mb-0"><code>{
+  "entries": [
+    { "dt": "2026-04-15T00:30:00Z", "msg": "Server started v1.3" },
+    { "dt": "2026-04-15T01:15:42Z", "msg": "Maintenance completed in 2.4min:\n - 3 added (...)" }
+  ]
+}</code></pre>
+        </div>
       </div>
-      <p>Serves the shadow map for the given tile set.</p>
+
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+          <code>/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
+            of the <code>path</code> field returned by <code>/available</code> (e.g. <code>2026040809_003</code>).</p>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+          <code>/{folder}/shadow.ktx2</code>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary small mb-0">Serves the shadow map for the given tile set.</p>
+        </div>
+      </div>
+
+      <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
     </div>
 
-    <p class="note">All other paths return <code>403 Forbidden</code>.</p>
-  </div>
+  </div><!-- /tab-content -->
+</div><!-- /container -->
 
-  <script>
-    const versionBadge = document.getElementById('version-badge');
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const versionBadge       = document.getElementById('version-badge');
+  const dot                = document.getElementById('status-dot');
+  const label              = document.getElementById('status-label');
+  const maintenanceEl      = document.getElementById('status-maintenance');
+  const cacheSizeLabel     = document.getElementById('cache-size-label');
+  const cacheProgressBar   = document.getElementById('cache-progress-bar');
+  const activeTasksSection = document.getElementById('active-tasks-section');
+  const activeList         = document.getElementById('active-list');
+  const queuedSection      = document.getElementById('queued-section');
+  const queuedList         = document.getElementById('queued-list');
+  const logEntries         = document.getElementById('log-entries');
 
-    const dot        = document.getElementById('status-dot');
-    const label      = document.getElementById('status-label');
-    const maintenance= document.getElementById('status-maintenance');
-    const activeSection = document.getElementById('active-section');
-    const activeList    = document.getElementById('active-list');
-    const queuedSection = document.getElementById('queued-section');
-    const queuedList    = document.getElementById('queued-list');
-    const idleNote      = document.getElementById('idle-note');
+  let nextMaintenanceTime = null;
 
-    function show(el) { el.style.display = 'block'; }
-    function hide(el) { el.style.display = 'none'; }
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
 
-    function applyStatus(data) {
-      const isWorking = data.status === 'working';
-      dot.className   = 'status-dot ' + data.status;
-      label.textContent = data.status;
+  function fmtBytes(b) {
+    if (b >= 1e12) return (b / 1e12).toFixed(1) + ' TB';
+    if (b >= 1e9)  return (b / 1e9).toFixed(1) + ' GB';
+    if (b >= 1e6)  return (b / 1e6).toFixed(1) + ' MB';
+    return (b / 1e3).toFixed(0) + ' KB';
+  }
 
-      maintenance.textContent = data.next_maintenance
-        ? 'Next maintenance: ' + data.next_maintenance.replace('T', ' ').replace('Z', ' UTC')
-        : '';
+  function updateCountdown() {
+    if (!nextMaintenanceTime) { maintenanceEl.textContent = ''; return; }
+    const diffSec = Math.max(0, (nextMaintenanceTime - Date.now()) / 1000);
+    const h = Math.floor(diffSec / 3600);
+    const m = Math.floor((diffSec % 3600) / 60);
+    const utc = new Date(nextMaintenanceTime);
+    const utcStr = String(utc.getUTCHours()).padStart(2,'0') + ':' + String(utc.getUTCMinutes()).padStart(2,'0') + ' UTC';
+    maintenanceEl.textContent = `Next maintenance in ${h}:${String(m).padStart(2,'0')} h (${utcStr})`;
+  }
 
-      // Active tasks
-      const activeEntries = Object.entries(data.active || {});
-      if (activeEntries.length) {
-        activeEntries.sort((a, b) => a[0].localeCompare(b[0]));
-        activeList.innerHTML = activeEntries.map(([folder, p]) => `
-          <div class="task-item">
-            <div class="task-header">
-              <span class="task-id">${folder}</span>
-              <span class="task-stage">${p.stage || ''}</span>
-              <span class="task-pct">${p.percent ?? 0}%</span>
-            </div>
-            <div class="task-detail">${p.detail || ''}</div>
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" style="width:${p.percent ?? 0}%"></div>
-            </div>
-          </div>`).join('');
-        show(activeSection);
-      } else {
-        hide(activeSection);
-      }
+  setInterval(updateCountdown, 1000);
 
-      // Queued tasks
-      const queued = data.queued || [];
-      if (queued.length) {
-        queuedList.innerHTML = queued.map(id => `<span class="queued-chip">${id}</span>`).join('');
-        show(queuedSection);
-      } else {
-        hide(queuedSection);
-      }
+  function applyStatus(data) {
+    dot.className     = 'status-dot ' + data.status;
+    label.textContent = data.status;
 
-      if (!activeEntries.length && !queued.length) {
-        show(idleNote);
-      } else {
-        hide(idleNote);
-      }
+    nextMaintenanceTime = data.next_maintenance ? new Date(data.next_maintenance).getTime() : null;
+    updateCountdown();
+
+    const tc = data.tile_cache;
+    if (tc) {
+      const pct = Math.min(100, (tc.size / tc.max) * 100);
+      cacheProgressBar.style.width = pct + '%';
+      cacheProgressBar.className = 'progress-bar' + (pct >= 90 ? ' bg-danger' : pct >= 70 ? ' bg-warning' : '');
+      cacheSizeLabel.textContent = fmtBytes(tc.size) + ' / ' + fmtBytes(tc.max);
     }
 
-    async function poll() {
-      try {
-        const res  = await fetch('./status');
-        const data = await res.json();
-        if (data.version) {
-          const v = 'v' + data.version;
-          versionBadge.textContent = v;
-          document.title = 'weBIGeo Cloud Server ' + v;
-        }
-        applyStatus(data);
-      } catch {
-        dot.className     = 'status-dot';
-        label.textContent = 'unreachable';
-        maintenance.textContent = '';
-        hide(activeSection);
-        hide(queuedSection);
-        hide(idleNote);
-      }
+    const activeEntries = Object.entries(data.active || {});
+    if (activeEntries.length) {
+      activeEntries.sort((a,b) => a[0].localeCompare(b[0]));
+      activeList.innerHTML = activeEntries.map(([folder, p]) => `
+        <div class="border rounded p-2">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <code class="small">${folder}</code>
+            <span class="small text-secondary">${p.stage || ''}</span>
+            <span class="ms-auto small">${p.percent ?? 0}%</span>
+          </div>
+          <div class="small text-secondary text-truncate mb-1">${escapeHtml(p.detail || '')}</div>
+          <div class="progress" style="height:4px">
+            <div class="progress-bar" style="width:${p.percent ?? 0}%"></div>
+          </div>
+        </div>`).join('');
     }
 
-    poll();
-    setInterval(poll, 500);
-  </script>
+    const queued = data.queued || [];
+    queuedList.innerHTML = queued.map(id => `<span class="badge text-bg-secondary font-monospace">${id}</span>`).join('');
+    queuedSection.style.display = queued.length ? 'block' : 'none';
+
+    activeTasksSection.style.display = (activeEntries.length || queued.length) ? 'block' : 'none';
+  }
+
+  function applyLog(data) {
+    const entries = data.entries || [];
+    if (!entries.length) { logEntries.innerHTML = '<div class="text-secondary small py-2">No entries.</div>'; return; }
+    logEntries.innerHTML = `
+      <table class="table table-sm table-striped small mb-0">
+        <tbody>
+          ${[...entries].reverse().map(e => `
+          <tr>
+            <td class="font-monospace text-secondary text-nowrap pe-3" style="width:1%">${e.dt.replace('T',' ').replace('Z','')}</td>
+            <td class="log-msg">${escapeHtml(e.msg)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function fetchLog() {
+    try {
+      const data = await fetch('./log?since=2592000').then(r => r.json());
+      applyLog(data);
+    } catch { /* log stays as-is */ }
+  }
+
+  const logRefreshItem = document.getElementById('log-refresh-item');
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+    btn.addEventListener('shown.bs.tab', e => {
+      logRefreshItem.classList.toggle('d-none', e.target.dataset.bsTarget !== '#tab-log');
+    });
+  });
+
+  document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
+
+  let pollTimer = null;
+  function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+
+  async function poll() {
+    let interval = 5000;
+    try {
+      const data = await fetch('./status').then(r => r.json());
+      applyStatus(data);
+      if (data.status === 'working') interval = 250;
+    } catch {
+      dot.className   = 'status-dot';
+      label.textContent = 'unreachable';
+      maintenanceEl.textContent = '';
+      activeTasksSection.style.display = 'none';
+    }
+    schedulePoll(interval);
+  }
+
+  async function init() {
+    try {
+      const data = await fetch('./status').then(r => r.json());
+      if (data.version) {
+        const v = 'v' + data.version;
+        versionBadge.textContent = v;
+        document.title = 'weBIGeo Cloud Server ' + v;
+      }
+      applyStatus(data);
+    } catch {
+      dot.className     = 'status-dot';
+      label.textContent = 'unreachable';
+    }
+    await fetchLog();
+  }
+
+  init().then(() => schedulePoll(5000));
+</script>
 </body>
-
 </html>

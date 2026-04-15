@@ -3,3 +3,4 @@ __pycache__
 tiles_output
 *.png
 *.log
+public-log.json
