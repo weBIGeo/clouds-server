@@ -30,13 +30,14 @@ import log_config
 import util
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from waitress import serve
 
 logger = logging.getLogger("server")
 
 VERSION = util.read_version()
+public_log = util.PublicLog()
 
 app = Flask(__name__)
 CORS(app)
@@ -389,6 +390,15 @@ def list_available():
     return jsonify({"items": items})
 
 
+@app.route("/log", methods=["GET"])
+def get_public_log():
+    try:
+        since = int(request.args.get("since", 7 * 24 * 3600))
+    except (ValueError, TypeError):
+        since = 7 * 24 * 3600
+    return jsonify({"entries": public_log.read_since(since)})
+
+
 @app.route("/<path:filename>")
 def serve_tiles(filename):
     """
@@ -536,6 +546,7 @@ def scheduler_loop():
 if __name__ == "__main__":
     log_config.setup_logging(log_file=config.log_file)
     log_config.print_logo()
+    public_log.append(f"Server started v{VERSION}")
     msg = f" === weBIGeo Cloud Server v{VERSION} started === "
     sep = " " + "=" * (len(msg) - 2) + " "
     logger.info(sep)
