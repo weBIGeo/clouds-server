@@ -51,6 +51,8 @@ task_progress = {}
 next_maintenance: datetime | None = None
 maintenance_batches: list[dict] = []
 maintenance_batches_lock = threading.Lock()
+tile_cache_size: int = 0  # cached dir size in bytes, updated after each worker task
+tile_cache_size_lock = threading.Lock()
 
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
@@ -187,12 +189,12 @@ def get_best_run_and_step(target_time):
 
 def get_folder_path(run_time, step):
     folder_name = f"{run_time.strftime('%Y%m%d%H')}_{step:03d}"
-    return os.path.join(os.path.abspath(config.output_dir), folder_name), folder_name
+    return os.path.join(os.path.abspath(config.tile_cache_dir), folder_name), folder_name
 
 
 def scan_existing_folders():
     results = {}
-    base_dir = os.path.abspath(config.output_dir)
+    base_dir = os.path.abspath(config.tile_cache_dir)
     if not os.path.exists(base_dir):
         return results
 
@@ -218,6 +220,35 @@ def scan_existing_folders():
             except ValueError:
                 continue
     return results
+
+
+def compute_tile_cache_size() -> int:
+    """Return the total size in bytes of all files under tile_cache_dir."""
+    base_dir = os.path.abspath(config.tile_cache_dir)
+    if not os.path.exists(base_dir):
+        return 0
+    total = 0
+    stack = [base_dir]
+    while stack:
+        with os.scandir(stack.pop()) as it:
+            for entry in it:
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                    elif entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                except OSError:
+                    pass
+    return total
+
+
+def refresh_tile_cache_size() -> int:
+    """Recompute and cache the tile cache size. Returns the new value."""
+    global tile_cache_size
+    size = compute_tile_cache_size()
+    with tile_cache_size_lock:
+        tile_cache_size = size
+    return size
 
 
 
@@ -260,8 +291,17 @@ def worker_loop():
         run_str = run_dt.strftime("%Y%m%d%H")
         task_key = (run_str, step)
 
+        with tile_cache_size_lock:
+            current_cache_size = tile_cache_size
+        if current_cache_size >= config.tile_cache_max_size:
+            logger.warning(
+                f"Tile cache size ({current_cache_size / 1e9:.1f} GB) exceeds limit "
+                f"({config.tile_cache_max_size / 1e9:.0f} GB), skipping {run_str}+{step}h"
+            )
+            continue
+
         folder_name = f"{run_str}_{step:03d}"
-        output_dir = os.path.join(os.path.abspath(config.output_dir), folder_name)
+        output_dir = os.path.join(os.path.abspath(config.tile_cache_dir), folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
         invalid_path = os.path.join(output_dir, "invalid")
@@ -332,7 +372,7 @@ def worker_loop():
         stale_removed = []
         if success:
             target_dt = run_dt + timedelta(hours=step)
-            base_dir = os.path.abspath(config.output_dir)
+            base_dir = os.path.abspath(config.tile_cache_dir)
             for name in os.listdir(base_dir):
                 if name == folder_name:
                     continue
@@ -355,6 +395,7 @@ def worker_loop():
                         batch["renewed"].extend(stale_removed)
                         break
 
+        refresh_tile_cache_size()
         _check_maintenance_completion()
 
 
@@ -377,12 +418,19 @@ def server_status():
 
     is_working = bool(queued or active)
 
+    with tile_cache_size_lock:
+        cache_size = tile_cache_size
+
     return jsonify({
         "version": VERSION,
         "status": "working" if is_working else "idle",
         "next_maintenance": next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if next_maintenance else None,
         "active": active,
         "queued": queued,
+        "tile_cache": {
+            "size": cache_size,
+            "max": config.tile_cache_max_size,
+        },
     })
 
 
@@ -429,7 +477,7 @@ def serve_tiles(filename):
 
         # We send from the specific run_step folder
         return send_from_directory(
-            os.path.join(os.path.abspath(config.output_dir), folder), real_filename
+            os.path.join(os.path.abspath(config.tile_cache_dir), folder), real_filename
         )
 
     # 2. Shadow Route
@@ -438,7 +486,7 @@ def serve_tiles(filename):
     if shadow_match:
         folder = shadow_match.group(1)
         return send_from_directory(
-            os.path.join(os.path.abspath(config.output_dir), folder), "shadow.ktx2"
+            os.path.join(os.path.abspath(config.tile_cache_dir), folder), "shadow.ktx2"
         )
 
     return ("Forbidden", 403)
@@ -501,7 +549,7 @@ def auto_build_all():
 
 def purge_old_data():
     """Remove invalid dirs and apply the tile_retention_policy rules."""
-    base_dir = os.path.abspath(config.output_dir)
+    base_dir = os.path.abspath(config.tile_cache_dir)
     if not os.path.exists(base_dir):
         return []
 
@@ -548,16 +596,18 @@ def _check_maintenance_completion():
             maintenance_batches.remove(b)
 
     for batch in done:
-        elapsed     = (time.monotonic() - batch["start_time"]) / 60
-        added_str   = ", ".join(batch["folder_names"]) or "none"
-        purged_str  = ", ".join(batch["purged"])        or "none"
-        renewed_str = ", ".join(batch["renewed"])       or "none"
-        logger.info("Maintenance completed in {elapsed:.1f}min")
-        public_log.append(f"Maintenance completed in {elapsed:.1f}min:\n - {len(batch['folder_names'])} added ({added_str})\n - {len(batch['purged'])} purged ({purged_str})\n - {len(batch['renewed'])} renewed ({renewed_str})")
+        elapsed = (time.monotonic() - batch["start_time"]) / 60
+        added_str = ", ".join(batch["folder_names"]) or "none"
+        purged_str = ", ".join(batch["purged"]) or "none"
+        renewed_str = ", ".join(batch["renewed"]) or "none"
+        summary = f"{batch['name']} Maintenance completed after {elapsed:.1f} min"
+        logger.info(summary)
+        public_log.append(f"{summary}:\n - {len(batch['folder_names'])} added ({added_str})\n - {len(batch['purged'])} purged ({purged_str})\n - {len(batch['renewed'])} renewed ({renewed_str})")
 
 
-def _run_maintenance():
+def _run_maintenance(name=None):
     start_time = time.monotonic()
+    label = name if name else datetime.now(timezone.utc).strftime("%H:%M UTC")
     logger.info("Scheduler: running maintenance")
     purged_folders = purge_old_data()
     queued = auto_build_all()
@@ -569,22 +619,20 @@ def _run_maintenance():
                 "purged":       purged_folders,
                 "renewed":      [],
                 "start_time":   start_time,
+                "name":         label,
             })
     else:
         elapsed    = (time.monotonic() - start_time) / 60
         purged_str = ", ".join(purged_folders) or "none"
-        summary = f"Maintenance completed in {elapsed:.1f}min:"
+        summary    = f"{label} Maintenance completed after {elapsed:.1f} min"
         logger.info(summary)
-        public_log.append(f"{summary}\n"
-                          f" - 0 added (none)\n"
-                          f" - {len(purged_folders)} purged ({purged_str})\n"
-                          f" - 0 renewed (none)")
+        public_log.append(f"{summary}:\n - 0 added (none)\n - {len(purged_folders)} purged ({purged_str})\n - 0 renewed (none)")
 
 
 def scheduler_loop():
     """Runs _run_maintenance on startup and at each configured auto_build_time."""
     global next_maintenance
-    _run_maintenance()
+    _run_maintenance(name="Startup")
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -605,9 +653,10 @@ if __name__ == "__main__":
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
-    output_dir = os.path.abspath(config.output_dir)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    cache_dir = os.path.abspath(config.tile_cache_dir)
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    refresh_tile_cache_size()
 
     if not config.only_serve:
         for i in range(config.worker_threads):

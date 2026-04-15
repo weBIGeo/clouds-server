@@ -17,7 +17,10 @@
 #############################################################################
 
 # Directory where generated tile sets are stored.
-output_dir = "tiles_output"
+tile_cache_dir = "tiles_output"
+
+# Maximum total size of the tile cache directory. Processing is skipped when exceeded.
+tile_cache_max_size = 100 * 1000 * 1000 * 1000  # 100 GB
 
 # Host and port the server listens on.
 # Use "0.0.0.0" to accept connections from any network interface.
