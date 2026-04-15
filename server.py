@@ -30,13 +30,14 @@ import log_config
 import util
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from waitress import serve
 
 logger = logging.getLogger("server")
 
 VERSION = util.read_version()
+public_log = util.PublicLog()
 
 app = Flask(__name__)
 CORS(app)
@@ -48,6 +49,10 @@ active_tasks = set()
 processing_lock = threading.Lock()
 task_progress = {}
 next_maintenance: datetime | None = None
+maintenance_batches: list[dict] = []
+maintenance_batches_lock = threading.Lock()
+tile_cache_size: int = 0  # cached dir size in bytes, updated after each worker task
+tile_cache_size_lock = threading.Lock()
 
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
@@ -184,12 +189,12 @@ def get_best_run_and_step(target_time):
 
 def get_folder_path(run_time, step):
     folder_name = f"{run_time.strftime('%Y%m%d%H')}_{step:03d}"
-    return os.path.join(os.path.abspath(config.output_dir), folder_name), folder_name
+    return os.path.join(os.path.abspath(config.tile_cache_dir), folder_name), folder_name
 
 
 def scan_existing_folders():
     results = {}
-    base_dir = os.path.abspath(config.output_dir)
+    base_dir = os.path.abspath(config.tile_cache_dir)
     if not os.path.exists(base_dir):
         return results
 
@@ -215,6 +220,38 @@ def scan_existing_folders():
             except ValueError:
                 continue
     return results
+
+
+def compute_tile_cache_size() -> int:
+    """Return the total size in bytes of all valid tile set folders under tile_cache_dir.
+    Folders containing an 'invalid' marker file are skipped.
+    """
+    base_dir = os.path.abspath(config.tile_cache_dir)
+    if not os.path.exists(base_dir):
+        return 0
+    total = 0
+    for name in os.listdir(base_dir):
+        folder = os.path.join(base_dir, name)
+        if not os.path.isdir(folder):
+            continue
+        if os.path.isfile(os.path.join(folder, "invalid")):
+            continue
+        for dirpath, _, filenames in os.walk(folder):
+            for f in filenames:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    pass
+    return total
+
+
+def refresh_tile_cache_size() -> int:
+    """Recompute and cache the tile cache size. Returns the new value."""
+    global tile_cache_size
+    size = compute_tile_cache_size()
+    with tile_cache_size_lock:
+        tile_cache_size = size
+    return size
 
 
 
@@ -257,8 +294,17 @@ def worker_loop():
         run_str = run_dt.strftime("%Y%m%d%H")
         task_key = (run_str, step)
 
+        with tile_cache_size_lock:
+            current_cache_size = tile_cache_size
+        if current_cache_size >= config.tile_cache_max_size:
+            logger.warning(
+                f"Tile cache size ({current_cache_size / 1e9:.1f} GB) exceeds limit "
+                f"({config.tile_cache_max_size / 1e9:.0f} GB), skipping {run_str}+{step}h"
+            )
+            continue
+
         folder_name = f"{run_str}_{step:03d}"
-        output_dir = os.path.join(os.path.abspath(config.output_dir), folder_name)
+        output_dir = os.path.join(os.path.abspath(config.tile_cache_dir), folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
         invalid_path = os.path.join(output_dir, "invalid")
@@ -326,9 +372,10 @@ def worker_loop():
                 task_progress.pop(task_key, None)
 
         # Remove any stale folders for the same target time
+        stale_removed = []
         if success:
             target_dt = run_dt + timedelta(hours=step)
-            base_dir = os.path.abspath(config.output_dir)
+            base_dir = os.path.abspath(config.tile_cache_dir)
             for name in os.listdir(base_dir):
                 if name == folder_name:
                     continue
@@ -340,8 +387,19 @@ def worker_loop():
                     if datetime.strptime(r2, "%Y%m%d%H") + timedelta(hours=int(s2)) == target_dt:
                         shutil.rmtree(path, ignore_errors=True)
                         logger.debug(f"Removed stale folder: {name}")
+                        stale_removed.append(name)
                 except ValueError:
                     continue
+
+        if stale_removed:
+            with maintenance_batches_lock:
+                for batch in maintenance_batches:
+                    if task_key in batch["task_keys"]:
+                        batch["renewed"].extend(stale_removed)
+                        break
+
+        refresh_tile_cache_size()
+        _check_maintenance_completion()
 
 
 
@@ -363,12 +421,19 @@ def server_status():
 
     is_working = bool(queued or active)
 
+    with tile_cache_size_lock:
+        cache_size = tile_cache_size
+
     return jsonify({
         "version": VERSION,
         "status": "working" if is_working else "idle",
         "next_maintenance": next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if next_maintenance else None,
         "active": active,
         "queued": queued,
+        "tile_cache": {
+            "size": cache_size,
+            "max": config.tile_cache_max_size,
+        },
     })
 
 
@@ -389,6 +454,15 @@ def list_available():
     return jsonify({"items": items})
 
 
+@app.route("/log", methods=["GET"])
+def get_public_log():
+    try:
+        since = int(request.args.get("since", 7 * 24 * 3600))
+    except (ValueError, TypeError):
+        since = 7 * 24 * 3600
+    return jsonify({"entries": public_log.read_since(since)})
+
+
 @app.route("/<path:filename>")
 def serve_tiles(filename):
     """
@@ -406,7 +480,7 @@ def serve_tiles(filename):
 
         # We send from the specific run_step folder
         return send_from_directory(
-            os.path.join(os.path.abspath(config.output_dir), folder), real_filename
+            os.path.join(os.path.abspath(config.tile_cache_dir), folder), real_filename
         )
 
     # 2. Shadow Route
@@ -415,7 +489,7 @@ def serve_tiles(filename):
     if shadow_match:
         folder = shadow_match.group(1)
         return send_from_directory(
-            os.path.join(os.path.abspath(config.output_dir), folder), "shadow.ktx2"
+            os.path.join(os.path.abspath(config.tile_cache_dir), folder), "shadow.ktx2"
         )
 
     return ("Forbidden", 403)
@@ -440,7 +514,8 @@ def auto_build_all():
 
     disk_state = scan_existing_folders()
 
-    added = replaced = 0
+    added = 0
+    queued: list[tuple[str, tuple[str, int]]] = []
     for target_time in targets:
         time_id = target_time.strftime("%Y%m%d%H")
         best_run, best_step = get_best_run_and_step(target_time)
@@ -458,33 +533,30 @@ def auto_build_all():
             continue
 
         with pending_tasks_lock:
-            existing = pending_tasks.get(time_id)
-            if existing is not None and best_run <= existing[0]:
-                continue  # already queued with same or better run
+            if pending_tasks.get(time_id) is not None:
+                continue  # already queued, do not replace
             pending_tasks[time_id] = (best_run, best_step)
 
         folder = f"{best_run.strftime('%Y%m%d%H')}_{best_step:03d}"
-        if existing is not None:
-            replaced += 1
-            logger.debug(f"AutoBuild: {folder} (target {time_id}, replaces +{existing[1]}h)")
-        else:
-            added += 1
-            logger.debug(f"AutoBuild: {folder} (target {time_id})")
+        queued.append((folder, task_key))
+        added += 1
+        logger.debug(f"AutoBuild: {folder} (target {time_id})")
 
-    logger.info(f"AutoBuild done: {added} added, {replaced} replaced")
+    logger.info(f"AutoBuild done: {added} added")
     # Signal workers only after all tasks are queued so they see correct queue depths.
     with pending_tasks_lock:
         if pending_tasks:
             pending_tasks_ready.set()
+    return queued
 
 
 def purge_old_data():
     """Remove invalid dirs and apply the tile_retention_policy rules."""
-    base_dir = os.path.abspath(config.output_dir)
+    base_dir = os.path.abspath(config.tile_cache_dir)
     if not os.path.exists(base_dir):
-        return
+        return []
 
-    removed = 0
+    purged: list[str] = []
     for entry in scan_existing_folders().values():
         path = os.path.join(base_dir, entry["folder"])
 
@@ -495,7 +567,7 @@ def purge_old_data():
         if not entry["ready"]:
             logger.debug(f"Purge: {entry['folder']} (invalid/incomplete)")
             shutil.rmtree(path, ignore_errors=True)
-            removed += 1
+            purged.append(entry["folder"])
             continue
 
         target_dt = entry["run"] + timedelta(hours=entry["step"])
@@ -507,21 +579,63 @@ def purge_old_data():
         if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
             logger.debug(f"Purge: {entry['folder']} (hour {target_dt.hour} not in retention policy hours {rule['hours']})")
             shutil.rmtree(path, ignore_errors=True)
-            removed += 1
+            purged.append(entry["folder"])
 
-    logger.info(f"Purge: removed {removed} tile set(s)")
+    logger.info(f"Purge: removed {len(purged)} tile set(s)")
+    return purged
 
 
-def _run_maintenance():
+def _check_maintenance_completion():
+    """Called by worker_loop after each task finishes. Logs and removes any batch whose tasks are all done."""
+    with pending_tasks_lock:
+        pending_keys = {(rd.strftime("%Y%m%d%H"), s) for rd, s in pending_tasks.values()}
+    with processing_lock:
+        active_keys = set(task_progress.keys())
+    still_running = pending_keys | active_keys
+
+    with maintenance_batches_lock:
+        done = [b for b in maintenance_batches if not (b["task_keys"] & still_running)]
+        for b in done:
+            maintenance_batches.remove(b)
+
+    for batch in done:
+        elapsed = (time.monotonic() - batch["start_time"]) / 60
+        added_str = ", ".join(batch["folder_names"]) or "none"
+        purged_str = ", ".join(batch["purged"]) or "none"
+        renewed_str = ", ".join(batch["renewed"]) or "none"
+        summary = f"{batch['name']} Maintenance completed after {elapsed:.1f} min"
+        logger.info(summary)
+        public_log.append(f"{summary}:\n - {len(batch['folder_names'])} added ({added_str})\n - {len(batch['purged'])} purged ({purged_str})\n - {len(batch['renewed'])} renewed ({renewed_str})")
+
+
+def _run_maintenance(name=None):
+    start_time = time.monotonic()
+    label = name if name else datetime.now(timezone.utc).strftime("%H:%M UTC")
     logger.info("Scheduler: running maintenance")
-    purge_old_data()
-    auto_build_all()
+    purged_folders = purge_old_data()
+    queued = auto_build_all()
+    if queued:
+        with maintenance_batches_lock:
+            maintenance_batches.append({
+                "task_keys":    {tk for _, tk in queued},
+                "folder_names": [f  for f,  _ in queued],
+                "purged":       purged_folders,
+                "renewed":      [],
+                "start_time":   start_time,
+                "name":         label,
+            })
+    else:
+        elapsed    = (time.monotonic() - start_time) / 60
+        purged_str = ", ".join(purged_folders) or "none"
+        summary    = f"{label} Maintenance completed after {elapsed:.1f} min"
+        logger.info(summary)
+        public_log.append(f"{summary}:\n - 0 added (none)\n - {len(purged_folders)} purged ({purged_str})\n - 0 renewed (none)")
 
 
 def scheduler_loop():
     """Runs _run_maintenance on startup and at each configured auto_build_time."""
     global next_maintenance
-    _run_maintenance()
+    _run_maintenance(name="Startup")
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -536,14 +650,16 @@ def scheduler_loop():
 if __name__ == "__main__":
     log_config.setup_logging(log_file=config.log_file)
     log_config.print_logo()
+    public_log.append(f"Server started v{VERSION}")
     msg = f" === weBIGeo Cloud Server v{VERSION} started === "
     sep = " " + "=" * (len(msg) - 2) + " "
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
-    output_dir = os.path.abspath(config.output_dir)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    cache_dir = os.path.abspath(config.tile_cache_dir)
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    refresh_tile_cache_size()
 
     if not config.only_serve:
         for i in range(config.worker_threads):
