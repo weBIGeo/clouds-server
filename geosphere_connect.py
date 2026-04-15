@@ -26,56 +26,43 @@ import requests
 logger = logging.getLogger("geosphere_connect")
 
 # =============================================================================
-# Dataset: SNOWGRID-CL v2.1 — daily 1 km snow grid for Austria
-#   Overview : https://data.hub.geosphere.at/dataset/snowgrid_cl-v2-1d-1km
-#   API base : https://dataset.api.hub.geosphere.at/v1/grid/historical/snowgrid_cl-v2-1d-1km
-#   Coverage : Austria, 1961-01-01 to present (published with ~1-2 day lag)
-#   Variables: snow_depth (m), swe_tot (kg m-2)
-#   Grid     : ~192 136 points at 1 km resolution (EPSG:3416)
+# Dataset: SNOWGRID-CL
+#  Overview: https://data.hub.geosphere.at/dataset/snowgrid_cl-v2-1d-1km
+#  API base: https://dataset.api.hub.geosphere.at/v1/grid/historical/snowgrid_cl-v2-1d-1km
+#  Coverage: Austria, 1961-01-01 to present (published with ~1-2 day lag)
+#  Variables: snow_depth (m), swe_tot (kg m-2)
+#  Grid: ~192 136 points at 1 km resolution (EPSG:3416)
 #
 # Rate limits (https://dataset.api.hub.geosphere.at/v1/docs/user-guide/request-limit.html):
-#   - 5 requests per second, 240 requests per hour
-#   - Max values per request: 1 000 000 (JSON/CSV) or 10 000 000 (NetCDF)
-#     Calculated as: parameters × time steps × grid points
-#     Here: 2 params × 1 day × ~192 k points ≈ 384 000 — well within the JSON limit.
+#  - 5 requests per second, 240 requests per hour
+#  - Max values per request: 1000000 (JSON/CSV) or 10 000000 (NetCDF)
+#    Calculated as: parameters × time steps × grid points
+#    NOTE: here its 2 params * 1 day * ~192 k points ~ 384000
 #
-# Missing values:
+# NOTE on missing values:
 #   The bounding box is a rectangle aligned to the dataset extent and covers
 #   significantly more area than Austria's actual land mass. Roughly half of
 #   all grid points fall outside Austrian territory and are returned as null.
 # =============================================================================
 
-# Target date for the SNOWGRID data download (YYYY-MM-DD)
 TARGET_DATE = "2026-04-13"
-
-# GeoSphere Austria SNOWGRID-CL v2 daily 1km dataset
 SNOWGRID_URL = "https://dataset.api.hub.geosphere.at/v1/grid/historical/snowgrid_cl-v2-1d-1km"
-
-# Full Austria bounding box from dataset metadata (south,west,north,east)
 AUSTRIA_BBOX = "46.16,9.39,49.18,17.38"
-
-# Both available variables
 SNOWGRID_PARAMETERS = ["snow_depth", "swe_tot"]
 
-# Local response cache directory
+# cache for the query results per day
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "snowgrid")
 
-
 def fetch_snowgrid(date_str: str) -> tuple[dict, bool]:
-    """Fetch SNOWGRID data for the given date (YYYY-MM-DD).
-
-    Returns (geojson_dict, from_cache) where from_cache indicates whether
-    the response was loaded from the local cache instead of the API.
-    """
     cache_path = os.path.join(CACHE_DIR, f"{date_str}.json")
 
-    # --- Load from cache if available ---
+    # from cache if possible
     if os.path.isfile(cache_path):
         logger.info(f"Loading cached response from {cache_path}")
         with open(cache_path, "r", encoding="utf-8") as f:
             return json.load(f), True
 
-    # --- Build single request covering all of Austria for the target day ---
+    # NOTE: Single request to not run into rate limits
     params = {
         "parameters": SNOWGRID_PARAMETERS,
         "start": f"{date_str}T00:00",
@@ -85,12 +72,12 @@ def fetch_snowgrid(date_str: str) -> tuple[dict, bool]:
     }
 
     logger.info(f"Requesting SNOWGRID data for {date_str} from GeoSphere Austria API ...")
-    response = requests.get(SNOWGRID_URL, params=params, timeout=120)
+    response = requests.get(SNOWGRID_URL, params=params, timeout=120) # seems to be very slow...
     response.raise_for_status()
 
     data = response.json()
 
-    # --- Persist to cache ---
+    # persists to cache
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(data, f)
@@ -100,7 +87,6 @@ def fetch_snowgrid(date_str: str) -> tuple[dict, bool]:
 
 
 def print_metadata(data: dict, date_str: str, from_cache: bool) -> None:
-    """Parse the GeoJSON FeatureCollection and print summary metadata."""
     features = data.get("features", [])
     total = len(features)
 
@@ -111,19 +97,18 @@ def print_metadata(data: dict, date_str: str, from_cache: bool) -> None:
         print("No features found in response.")
         return
 
-    # --- Compute actual bounding box from feature coordinates ---
+    # compute bounding box
     lons = [f["geometry"]["coordinates"][0] for f in features]
     lats = [f["geometry"]["coordinates"][1] for f in features]
-    print(f"Bounding box (lon) : {min(lons):.4f} .. {max(lons):.4f}")
-    print(f"Bounding box (lat) : {min(lats):.4f} .. {max(lats):.4f}")
+    print(f"Bounding box (lon): {min(lons):.4f} ... {max(lons):.4f}")
+    print(f"Bounding box (lat): {min(lats):.4f} ... {max(lats):.4f}")
 
-    # --- Timestamp is at the top level of the FeatureCollection ---
     timestamps = data.get("timestamps", [])
     if timestamps:
         print(f"Timestamp          : {timestamps[0]}")
 
-    # --- Per-variable statistics ---
-    # Properties are structured as: properties.parameters.<var>.data[0]
+    # PER VARIABLE STATISTICS
+    # props are structured as: properties.parameters.<var>.data[0]
     for var in SNOWGRID_PARAMETERS:
         values = []
         missing = 0
@@ -138,12 +123,12 @@ def print_metadata(data: dict, date_str: str, from_cache: bool) -> None:
                 values.append(v)
 
         print(f"\n  [{var}] ({unit})")
-        print(f"    Valid values : {len(values):,}")
-        print(f"    Missing      : {missing:,}")
+        print(f" - Valid values: {len(values):,}")
+        print(f" - Missing: {missing:,}")
         if values:
-            print(f"    Min          : {min(values):.4f}")
-            print(f"    Max          : {max(values):.4f}")
-            print(f"    Mean         : {sum(values) / len(values):.4f}")
+            print(f" - Min: {min(values):.4f}")
+            print(f" - Max: {max(values):.4f}")
+            print(f" - Mean: {sum(values) / len(values):.4f}")
 
     print()
 
