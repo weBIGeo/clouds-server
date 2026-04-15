@@ -223,20 +223,23 @@ def scan_existing_folders():
 
 
 def compute_tile_cache_size() -> int:
-    """Return the total size in bytes of all files under tile_cache_dir."""
+    """Return the total size in bytes of all valid tile set folders under tile_cache_dir.
+    Folders containing an 'invalid' marker file are skipped.
+    """
     base_dir = os.path.abspath(config.tile_cache_dir)
     if not os.path.exists(base_dir):
         return 0
     total = 0
-    stack = [base_dir]
-    while stack:
-        with os.scandir(stack.pop()) as it:
-            for entry in it:
+    for name in os.listdir(base_dir):
+        folder = os.path.join(base_dir, name)
+        if not os.path.isdir(folder):
+            continue
+        if os.path.isfile(os.path.join(folder, "invalid")):
+            continue
+        for dirpath, _, filenames in os.walk(folder):
+            for f in filenames:
                 try:
-                    if entry.is_file(follow_symlinks=False):
-                        total += entry.stat(follow_symlinks=False).st_size
-                    elif entry.is_dir(follow_symlinks=False):
-                        stack.append(entry.path)
+                    total += os.path.getsize(os.path.join(dirpath, f))
                 except OSError:
                     pass
     return total

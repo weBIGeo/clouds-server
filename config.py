@@ -20,7 +20,7 @@
 tile_cache_dir = "tiles_output"
 
 # Maximum total size of the tile cache directory. Processing is skipped when exceeded.
-tile_cache_max_size = 100 * 1000 * 1000 * 1000  # 100 GB
+tile_cache_max_size = 100 * 1024 * 1024 * 1024  # 100 GiB
 
 # Host and port the server listens on.
 # Use "0.0.0.0" to accept connections from any network interface.
@@ -36,7 +36,7 @@ log_level = "DEBUG"
 # Log file path. Set to empty string to disable file logging.
 log_file = "latest.log"
 # Log file rotation: maximum size per file in bytes and number of backup files to keep.
-log_file_max_bytes = 5 * 1024 * 1024  # 5 MB
+log_file_max_bytes = 5 * 1024 * 1024  # 5 MiB
 log_file_backup_count = 3
 
 # Per-logger level overrides. Use this to silence noisy third-party libraries

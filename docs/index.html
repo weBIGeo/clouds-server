@@ -19,21 +19,21 @@
 <body>
 <div class="container py-4" style="max-width:860px">
 
-  <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+  <!-- === HEADER === -->
   <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
     <span style="font-size:1.8rem">☁️</span>
     <h1 class="fs-4 fw-semibold mb-0">weBIGeo Cloud Server</h1>
     <span class="badge rounded-pill text-bg-primary ms-1" id="version-badge">…</span>
-    <div class="ms-auto d-flex align-items-center gap-2">
+  </div>
+
+  <!-- === STATUS === -->
+  <div class="mb-3">
+    <div class="d-flex align-items-center gap-2 mb-2">
       <span class="status-dot" id="status-dot"></span>
       <span class="fw-semibold text-capitalize small" id="status-label">connecting…</span>
     </div>
-  </div>
-
-  <!-- ── STORAGE + MAINTENANCE ────────────────────────────────────────────── -->
-  <div class="mb-3">
     <div class="d-flex justify-content-between small text-secondary mb-1">
-      <span>Storage Capacity</span>
+      <span>Tile Cache</span>
       <span id="cache-size-label">…</span>
     </div>
     <div class="progress mb-2" style="height:6px">
@@ -42,7 +42,7 @@
     <div class="small text-secondary" id="status-maintenance"></div>
   </div>
 
-  <!-- ── ACTIVE TASKS (visible only while working) ────────────────────────── -->
+  <!-- === ACTIVE TASKS === -->
   <div id="active-tasks-section" style="display:none" class="mb-4">
     <div class="text-uppercase small fw-semibold text-secondary mb-2">Active Tasks</div>
     <div id="active-list" class="d-flex flex-column gap-2 mb-2"></div>
@@ -52,19 +52,15 @@
     </div>
   </div>
 
-  <!-- ── TABS ─────────────────────────────────────────────────────────────── -->
   <ul class="nav nav-tabs mb-3" role="tablist">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-about" role="tab">About</button></li>
     <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-log"   role="tab">Event Log</button></li>
     <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-api"   role="tab">API</button></li>
-    <li class="nav-item ms-auto align-items-center d-none" id="log-refresh-item">
-      <button class="btn btn-sm btn-outline-secondary" id="log-refresh-btn">Refresh</button>
-    </li>
   </ul>
 
   <div class="tab-content">
 
-    <!-- ── ABOUT ───────────────────────────────────────────────────────────── -->
+    <!-- === ABOUT === -->
     <div class="tab-pane fade show active" id="tab-about" role="tabpanel">
       <p class="text-secondary">Preprocessing server for real-time volumetric cloud rendering in the browser.
         Originally developed by <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.</p>
@@ -85,14 +81,15 @@
       </p>
     </div>
 
-    <!-- ── EVENT LOG ───────────────────────────────────────────────────────── -->
+    <!-- === EVENT LOG === -->
     <div class="tab-pane fade" id="tab-log" role="tabpanel">
+      <button class="btn btn-outline-secondary w-100 mt-3" id="log-refresh-btn">Refresh Event Log</button>
       <div id="log-entries">
         <div class="text-secondary small py-2">No entries.</div>
       </div>
     </div>
 
-    <!-- ── API ─────────────────────────────────────────────────────────────── -->
+    <!-- === API === -->
     <div class="tab-pane fade" id="tab-api" role="tabpanel">
       <p class="text-secondary small mb-3">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
 
@@ -201,8 +198,8 @@
       <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
     </div>
 
-  </div><!-- /tab-content -->
-</div><!-- /container -->
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -225,10 +222,11 @@
   }
 
   function fmtBytes(b) {
-    if (b >= 1e12) return (b / 1e12).toFixed(1) + ' TB';
-    if (b >= 1e9)  return (b / 1e9).toFixed(1) + ' GB';
-    if (b >= 1e6)  return (b / 1e6).toFixed(1) + ' MB';
-    return (b / 1e3).toFixed(0) + ' KB';
+    const GiB = 1024 ** 3, MiB = 1024 ** 2, KiB = 1024;
+    if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(1) + ' TiB';
+    if (b >= GiB)       return (b / GiB).toFixed(1) + ' GiB';
+    if (b >= MiB)       return (b / MiB).toFixed(1) + ' MiB';
+    return (b / KiB).toFixed(0) + ' KiB';
   }
 
   function updateCountdown() {
@@ -301,15 +299,8 @@
     try {
       const data = await fetch('./log?since=2592000').then(r => r.json());
       applyLog(data);
-    } catch { /* log stays as-is */ }
+    } catch { }
   }
-
-  const logRefreshItem = document.getElementById('log-refresh-item');
-  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
-    btn.addEventListener('shown.bs.tab', e => {
-      logRefreshItem.classList.toggle('d-none', e.target.dataset.bsTarget !== '#tab-log');
-    });
-  });
 
   document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
 
@@ -317,7 +308,7 @@
   function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
 
   async function poll() {
-    let interval = 5000;
+    let interval = 1000;
     try {
       const data = await fetch('./status').then(r => r.json());
       applyStatus(data);
@@ -347,7 +338,7 @@
     await fetchLog();
   }
 
-  init().then(() => schedulePoll(5000));
+  init().then(() => schedulePoll(500));
 </script>
 </body>
 </html>
