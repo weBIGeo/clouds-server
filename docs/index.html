@@ -27,19 +27,14 @@
   </div>
 
   <!-- === STATUS === -->
-  <div class="mb-3">
-    <div class="d-flex align-items-center gap-2 mb-2">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <div class="w-100">
+      <div class="d-flex align-items-center gap-2">
       <span class="status-dot" id="status-dot"></span>
-      <span class="fw-semibold text-capitalize small" id="status-label">connecting…</span>
+      <span class="fw-semibold text-capitalize large" id="status-label">connecting…</span>
+      </div>
+      <div class="small text-secondary mt-2" id="status-maintenance"></div>
     </div>
-    <div class="d-flex justify-content-between small text-secondary mb-1">
-      <span>Tile Cache</span>
-      <span id="cache-size-label">…</span>
-    </div>
-    <div class="progress mb-2" style="height:6px">
-      <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
-    </div>
-    <div class="small text-secondary" id="status-maintenance"></div>
   </div>
 
   <!-- === ACTIVE TASKS === -->
@@ -54,6 +49,7 @@
 
   <ul class="nav nav-tabs mb-3" role="tablist">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-about" role="tab">About</button></li>
+    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-cache" role="tab">Tile Cache</button></li>
     <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-log"   role="tab">Event Log</button></li>
     <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-api"   role="tab">API</button></li>
   </ul>
@@ -79,6 +75,19 @@
         strategies developed by <strong>Gerald Kimmersdorfer</strong>.
         You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
       </p>
+    </div>
+
+    <!-- === TILE CACHE === -->
+    <div class="tab-pane fade" id="tab-cache" role="tabpanel">
+      <div class="d-flex justify-content-between small text-secondary mb-1 mt-1">
+        <span>Tile Cache</span>
+        <span id="cache-size-label">…</span>
+      </div>
+      <div class="progress mb-2" style="height:6px">
+        <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
+      </div>
+      <button class="btn btn-outline-secondary w-100 mb-3" id="available-refresh-btn">Load/Refresh Available Tile Sets</button>
+      <div id="available-entries"></div>
     </div>
 
     <!-- === EVENT LOG === -->
@@ -302,6 +311,41 @@
     } catch { }
   }
 
+  const availableEntries = document.getElementById('available-entries');
+
+  function fmtId(id) {
+    // YYYYMMDDHH → DD.MM.YYYY HH:MM
+    const y = id.slice(0,4), mo = id.slice(4,6), d = id.slice(6,8), h = id.slice(8,10);
+    return `${d}.${mo}.${y} ${h}:00 UTC`;
+  }
+
+  function applyAvailable(data) {
+    const items = data.items || [];
+    if (!items.length) { availableEntries.innerHTML = '<div class="text-secondary small">No tile sets available.</div>'; return; }
+    availableEntries.innerHTML = `
+      <table class="table table-sm table-striped small mb-0">
+        <thead><tr><th>Time</th><th>Status</th><th>Path</th></tr></thead>
+        <tbody>
+          ${items.map(it => {
+            const folder = it.path.replace(/\//g, '');
+            return `<tr>
+              <td class="text-nowrap">${fmtId(it.id)}</td>
+              <td><span class="badge text-bg-success">${it.status}</span></td>
+              <td><code>${it.path}</code></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function fetchAvailable() {
+    try {
+      const data = await fetch('./available').then(r => r.json());
+      applyAvailable(data);
+    } catch { availableEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>'; }
+  }
+
+  document.getElementById('available-refresh-btn').addEventListener('click', fetchAvailable);
   document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
 
   let pollTimer = null;
