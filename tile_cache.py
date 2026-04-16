@@ -19,11 +19,15 @@
 
 import os
 import re
+import shutil
 import threading
 import urllib.request
+import logging
 import config
+import db
 from datetime import datetime, timedelta, timezone
 
+logger = logging.getLogger("tile_cache")
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
@@ -33,9 +37,6 @@ DWD_RUN_CACHE_LOCK = threading.Lock()
 DWD_FAIL_TTL = 60
 # ICON-D2 only produces runs at 00, 03, 06, 09..
 DWD_RUN_INTERVAL = 3
-
-tile_cache_size: int = 0  # cached dir size in bytes, updated after each worker task
-tile_cache_size_lock = threading.Lock()
 
 
 def get_scheme_rule(target_dt):
@@ -195,33 +196,80 @@ def scan_existing_folders():
     return results
 
 
-def compute_tile_cache_size() -> int:
-    """Return the total size in bytes of all valid tile set folders under tile_cache_dir.
-    Folders containing an 'invalid' marker file are skipped.
-    """
-    base_dir = os.path.abspath(config.tile_cache_dir)
-    if not os.path.exists(base_dir):
-        return 0
+def compute_folder_size(folder_path: str) -> int:
+    """Return the total size in bytes of all files inside a single folder."""
     total = 0
-    for name in os.listdir(base_dir):
-        folder = os.path.join(base_dir, name)
-        if not os.path.isdir(folder):
-            continue
-        if os.path.isfile(os.path.join(folder, "invalid")):
-            continue
-        for dirpath, _, filenames in os.walk(folder):
-            for f in filenames:
-                try:
-                    total += os.path.getsize(os.path.join(dirpath, f))
-                except OSError:
-                    pass
+    for dirpath, _, filenames in os.walk(folder_path):
+        for f in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
     return total
 
 
-def refresh_tile_cache_size() -> int:
-    """Recompute and cache the tile cache size. Returns the new value."""
-    global tile_cache_size
-    size = compute_tile_cache_size()
-    with tile_cache_size_lock:
-        tile_cache_size = size
-    return size
+def sync_from_disk() -> None:
+    """Reconcile the tile_cache DB table with the actual filesystem on startup.
+
+    Handles all restart-recovery cases so the DB is the authoritative source of
+    truth before any worker threads begin.
+    """
+    base_dir = os.path.abspath(config.tile_cache_dir)
+    os.makedirs(base_dir, exist_ok=True)
+
+    disk_folders = scan_existing_folders()  # target_str -> entry dict
+    # Build a flat map of folder_name -> disk entry for quick lookup
+    disk_by_folder = {e["folder"]: e for e in disk_folders.values()}
+
+    db_rows = {r["folder"]: r for r in db.tile_get_all()}
+
+    # --- Reconcile DB rows against disk ---
+    for folder, row in db_rows.items():
+        path = os.path.join(base_dir, folder)
+        disk = disk_by_folder.get(folder)
+
+        if row["status"] == "fetching":
+            if disk is None or not disk["ready"]:
+                # Incomplete or missing — delete folder if present, requeue
+                if os.path.exists(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                    logger.info(f"sync_from_disk: removed orphaned folder {folder}, requeueing")
+                else:
+                    logger.info(f"sync_from_disk: fetching task {folder} has no folder, requeueing")
+                db.tile_set_status(folder, "pending")
+            else:
+                # Folder is valid — server crashed after completion but before DB update
+                size = compute_folder_size(path)
+                db.tile_set_ready(folder, size, 0.0)
+                logger.info(f"sync_from_disk: adopted completed folder {folder} ({size} bytes)")
+
+        elif row["status"] == "pending":
+            if disk is not None and disk["ready"]:
+                # Folder is already valid on disk — promote to ready
+                size = compute_folder_size(path)
+                db.tile_set_ready(folder, size, 0.0)
+                logger.info(f"sync_from_disk: promoted pending {folder} to ready ({size} bytes)")
+            # pending with no folder on disk: leave as-is, workers will claim it
+
+        elif row["status"] == "ready":
+            if disk is None:
+                # Folder was deleted externally — remove from DB
+                db.tile_delete(folder)
+                logger.info(f"sync_from_disk: removed DB entry for missing folder {folder}")
+
+    # --- Adopt disk folders not known to DB ---
+    for folder, entry in disk_by_folder.items():
+        if folder in db_rows:
+            continue
+        path = os.path.join(base_dir, folder)
+        if entry["ready"]:
+            run_str = entry["run"].strftime("%Y%m%d%H")
+            target_str = (entry["run"] + timedelta(hours=entry["step"])).strftime("%Y%m%d%H")
+            size = compute_folder_size(path)
+            db.tile_upsert(folder, run_str, entry["step"], target_str)
+            db.tile_set_ready(folder, size, 0.0)
+            logger.info(f"sync_from_disk: adopted unknown folder {folder} ({size} bytes)")
+        else:
+            # Invalid/incomplete folder with no DB record — discard
+            shutil.rmtree(path, ignore_errors=True)
+            logger.info(f"sync_from_disk: deleted orphaned invalid folder {folder}")

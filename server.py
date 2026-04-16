@@ -46,46 +46,43 @@ def index():
 
 @app.route("/status", methods=["GET"])
 def server_status():
-    with scheduler.pending_tasks_lock:
-        queued = sorted(f"{run_dt.strftime('%Y%m%d%H')}_{step:03d}" for run_dt, step in scheduler.pending_tasks.values())
-
     with scheduler.processing_lock:
         active = {
             f"{run_str}_{step:03d}": dict(progress)
             for (run_str, step), progress in scheduler.task_progress.items()
         }
 
-    is_working = bool(queued or active)
-
-    with tile_cache.tile_cache_size_lock:
-        cache_size = tile_cache.tile_cache_size
-
     return jsonify({
         "version": VERSION,
-        "status": "working" if is_working else "idle",
+        "status": "working" if active else "idle",
         "next_maintenance": scheduler.next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if scheduler.next_maintenance else None,
         "active": active,
-        "queued": queued,
         "tile_cache": {
-            "size": cache_size,
+            "size": db.tile_get_cache_size(),
             "max": config.tile_cache_max_size,
         },
     })
 
 
-@app.route("/available", methods=["GET"])
-def list_available():
-    disk_state = tile_cache.scan_existing_folders()
-    items = []
-    for time_id, entry in disk_state.items():
-        if entry["ready"]:
-            items.append({
-                "id": time_id,
-                "status": "ready",
-                "path": f"/{entry['folder']}/",
-                "run": entry["run"].strftime("%Y%m%d%H"),
-                "step": entry["step"],
-            })
+@app.route("/tiles", methods=["GET"])
+def list_tiles():
+    status_filter = request.args.get("status") or None
+    rows = db.tile_get_all(status=status_filter)
+    items = [
+        {
+            "id": r["target_str"],
+            "folder": r["folder"],
+            "status": r["status"],
+            "path": f"/{r['folder']}/" if r["status"] == "ready" else None,
+            "run": r["run_str"],
+            "step": r["step"],
+            "size": r["size"],
+            "queued_at": r["queued_at"],
+            "completed_at": r["completed_at"],
+            "processing_sec": r["processing_sec"],
+        }
+        for r in rows
+    ]
     items.sort(key=lambda x: x["id"])
     return jsonify({"items": items})
 
@@ -136,10 +133,7 @@ if __name__ == "__main__":
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
-    cache_dir = os.path.abspath(config.tile_cache_dir)
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir)
-    tile_cache.refresh_tile_cache_size()
+    tile_cache.sync_from_disk()
 
     if not config.only_serve:
         for i in range(config.worker_threads):

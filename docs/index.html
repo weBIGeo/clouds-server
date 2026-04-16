@@ -41,10 +41,6 @@
   <div id="active-tasks-section" style="display:none" class="mb-4">
     <div class="text-uppercase small fw-semibold text-secondary mb-2">Active Tasks</div>
     <div id="active-list" class="d-flex flex-column gap-2 mb-2"></div>
-    <div id="queued-section" style="display:none">
-      <div class="text-uppercase small fw-semibold text-secondary mt-2 mb-1">Queued</div>
-      <div id="queued-list" class="d-flex flex-wrap gap-1"></div>
-    </div>
   </div>
 
   <ul class="nav nav-tabs mb-3" role="tablist">
@@ -83,18 +79,18 @@
         <span>Tile Cache</span>
         <span id="cache-size-label">…</span>
       </div>
-      <div class="progress mb-2" style="height:6px">
+      <div class="progress mb-3" style="height:6px">
         <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
       </div>
-      <button class="btn btn-outline-secondary w-100 mb-3" id="available-refresh-btn">Load/Refresh Available Tile Sets</button>
-      <div id="available-entries"></div>
+      <button class="btn btn-outline-secondary w-100 mb-2" id="tiles-refresh-btn">Refresh Tile Information</button>
+      <div id="tile-entries"><div class="text-secondary small py-2">Click the button above to load tile set information.</div></div>
     </div>
 
     <!-- === EVENT LOG === -->
     <div class="tab-pane fade" id="tab-log" role="tabpanel">
       <button class="btn btn-outline-secondary w-100 mt-3" id="log-refresh-btn">Refresh Event Log</button>
       <div id="log-entries">
-        <div class="text-secondary small py-2">No entries.</div>
+        <div class="text-secondary small py-2">Click the button above to load log entries.</div>
       </div>
     </div>
 
@@ -108,26 +104,26 @@
           <code>/status</code>
         </div>
         <div class="card-body">
-          <p class="text-secondary small">Returns the current server status: what is actively being processed, what is
-            queued, and when the next scheduled maintenance run is.</p>
+          <p class="text-secondary small">Returns the current server status: what is actively being processed right now and when the next scheduled maintenance run is.</p>
           <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
           <pre class="border rounded p-3 small mb-3"><code>{
-  "version": "1.2",
+  "version": "1.4",
   "status": "working",
   "next_maintenance": "2026-04-12T00:30:00Z",
   "active": {
-    "2026041312_001": { "status": "pending", "stage": "download", "detail": "133/522 files", "percent": 25 }
+    "2026041312_001": { "stage": "download", "detail": "133/522 files", "percent": 25 }
   },
-  "queued": ["2026041300_006", "2026041306_000"]
+  "tile_cache": { "size": 4831838208, "max": 10737418240 }
 }</code></pre>
           <table class="table table-sm small mb-0">
             <thead><tr><th>Field</th><th>Description</th></tr></thead>
             <tbody>
               <tr><td><code>version</code></td><td>Server version string</td></tr>
-              <tr><td><code>status</code></td><td><code>"idle"</code> or <code>"working"</code></td></tr>
+              <tr><td><code>status</code></td><td><code>"idle"</code> or <code>"working"</code> (based on actively running tasks)</td></tr>
               <tr><td><code>next_maintenance</code></td><td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td></tr>
-              <tr><td><code>active</code></td><td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td></tr>
-              <tr><td><code>queued</code></td><td>Folder names waiting in the queue, sorted ascending</td></tr>
+              <tr><td><code>active</code></td><td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with live <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td></tr>
+              <tr><td><code>tile_cache.size</code></td><td>Total bytes used by ready tile sets</td></tr>
+              <tr><td><code>tile_cache.max</code></td><td>Configured cache size limit in bytes</td></tr>
             </tbody>
           </table>
         </div>
@@ -136,24 +132,47 @@
       <div class="card mb-3">
         <div class="card-header d-flex align-items-center gap-2">
           <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/available</code>
+          <code>/tiles</code>
         </div>
         <div class="card-body">
-          <p class="text-secondary small">Returns all ready tile sets currently on disk, sorted by time.</p>
+          <p class="text-secondary small">Returns all known tile sets from the database, optionally filtered by status. Sorted by target time ascending.</p>
+          <p class="text-uppercase small fw-semibold text-secondary mb-1">Query Parameters</p>
+          <table class="table table-sm small mb-3">
+            <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>status</code></td><td><em>all</em></td><td>Filter by status: <code>ready</code>, <code>pending</code>, <code>fetching</code>, or <code>failed</code></td></tr>
+            </tbody>
+          </table>
           <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
           <pre class="border rounded p-3 small mb-3"><code>{
   "items": [
-    { "id": "2026040812", "status": "ready", "run": "2026040809", "step": 3, "path": "/2026040809_003/" }
+    {
+      "id": "2026040812",
+      "folder": "2026040809_003",
+      "status": "ready",
+      "path": "/2026040809_003/",
+      "run": "2026040809",
+      "step": 3,
+      "size": 123456789,
+      "queued_at": "2026-04-08T09:00:00Z",
+      "completed_at": "2026-04-08T09:15:42Z",
+      "processing_sec": 942.3
+    }
   ]
 }</code></pre>
           <table class="table table-sm small mb-0">
             <thead><tr><th>Field</th><th>Description</th></tr></thead>
             <tbody>
               <tr><td><code>id</code></td><td>Target hour (<code>YYYYMMDDHH</code>)</td></tr>
-              <tr><td><code>status</code></td><td>Always <code>"ready"</code></td></tr>
+              <tr><td><code>folder</code></td><td>Folder name on disk (<code>YYYYMMDDHH_SSS</code>)</td></tr>
+              <tr><td><code>status</code></td><td><code>ready</code> | <code>pending</code> | <code>fetching</code> | <code>failed</code></td></tr>
+              <tr><td><code>path</code></td><td>URL prefix for tile and shadow files (only set when <code>status=ready</code>)</td></tr>
               <tr><td><code>run</code></td><td>Model run used (<code>YYYYMMDDHH</code>)</td></tr>
-              <tr><td><code>step</code></td><td>Forecast step (hours from run to target)</td></tr>
-              <tr><td><code>path</code></td><td>URL prefix for tile and shadow files</td></tr>
+              <tr><td><code>step</code></td><td>Forecast step in hours from run to target</td></tr>
+              <tr><td><code>size</code></td><td>Total size in bytes (only set when <code>status=ready</code>)</td></tr>
+              <tr><td><code>queued_at</code></td><td>ISO 8601 UTC timestamp when first queued</td></tr>
+              <tr><td><code>completed_at</code></td><td>ISO 8601 UTC timestamp when marked ready (only set when <code>status=ready</code>)</td></tr>
+              <tr><td><code>processing_sec</code></td><td>Wall-clock seconds from queue claim to ready (only set when <code>status=ready</code>)</td></tr>
             </tbody>
           </table>
         </div>
@@ -176,7 +195,7 @@
           <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
           <pre class="border rounded p-3 small mb-0"><code>{
   "entries": [
-    { "dt": "2026-04-15T00:30:00Z", "msg": "Server started v1.3" },
+    { "dt": "2026-04-15T00:30:00Z", "msg": "Server started v1.4" },
     { "dt": "2026-04-15T01:15:42Z", "msg": "Maintenance completed in 2.4min:\n - 3 added (...)" }
   ]
 }</code></pre>
@@ -190,7 +209,7 @@
         </div>
         <div class="card-body">
           <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
-            of the <code>path</code> field returned by <code>/available</code> (e.g. <code>2026040809_003</code>).</p>
+            of the <code>path</code> field returned by <code>/tiles</code> (e.g. <code>2026040809_003</code>).</p>
         </div>
       </div>
 
@@ -220,9 +239,8 @@
   const cacheProgressBar   = document.getElementById('cache-progress-bar');
   const activeTasksSection = document.getElementById('active-tasks-section');
   const activeList         = document.getElementById('active-list');
-  const queuedSection      = document.getElementById('queued-section');
-  const queuedList         = document.getElementById('queued-list');
   const logEntries         = document.getElementById('log-entries');
+  const tileEntries        = document.getElementById('tile-entries');
 
   let nextMaintenanceTime = null;
 
@@ -231,11 +249,28 @@
   }
 
   function fmtBytes(b) {
+    if (b == null) return '—';
     const GiB = 1024 ** 3, MiB = 1024 ** 2, KiB = 1024;
     if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(1) + ' TiB';
     if (b >= GiB)       return (b / GiB).toFixed(1) + ' GiB';
     if (b >= MiB)       return (b / MiB).toFixed(1) + ' MiB';
     return (b / KiB).toFixed(0) + ' KiB';
+  }
+
+  function fmtId(id) {
+    const y = id.slice(0,4), mo = id.slice(4,6), d = id.slice(6,8), h = id.slice(8,10);
+    return `${d}.${mo}.${y} ${h}:00`;
+  }
+
+  function fmtDuration(sec) {
+    if (sec == null) return '—';
+    if (sec < 60) return sec.toFixed(0) + 's';
+    return (sec / 60).toFixed(1) + 'min';
+  }
+
+  function statusBadge(status) {
+    const map = { ready: 'success', pending: 'secondary', fetching: 'warning', failed: 'danger' };
+    return `<span class="badge text-bg-${map[status] || 'secondary'}">${status}</span>`;
   }
 
   function updateCountdown() {
@@ -280,13 +315,10 @@
             <div class="progress-bar" style="width:${p.percent ?? 0}%"></div>
           </div>
         </div>`).join('');
+      activeTasksSection.style.display = 'block';
+    } else {
+      activeTasksSection.style.display = 'none';
     }
-
-    const queued = data.queued || [];
-    queuedList.innerHTML = queued.map(id => `<span class="badge text-bg-secondary font-monospace">${id}</span>`).join('');
-    queuedSection.style.display = queued.length ? 'block' : 'none';
-
-    activeTasksSection.style.display = (activeEntries.length || queued.length) ? 'block' : 'none';
   }
 
   function applyLog(data) {
@@ -311,41 +343,40 @@
     } catch { }
   }
 
-  const availableEntries = document.getElementById('available-entries');
+  // --- Tile cache tab ---
 
-  function fmtId(id) {
-    // YYYYMMDDHH → DD.MM.YYYY HH:MM
-    const y = id.slice(0,4), mo = id.slice(4,6), d = id.slice(6,8), h = id.slice(8,10);
-    return `${d}.${mo}.${y} ${h}:00 UTC`;
-  }
-
-  function applyAvailable(data) {
+  function applyTiles(data) {
     const items = data.items || [];
-    if (!items.length) { availableEntries.innerHTML = '<div class="text-secondary small">No tile sets available.</div>'; return; }
-    availableEntries.innerHTML = `
+    if (!items.length) {
+      tileEntries.innerHTML = '<div class="text-secondary small py-2">No tile sets found.</div>';
+      return;
+    }
+    tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
-        <thead><tr><th>Time</th><th>Status</th><th>Path</th></tr></thead>
+        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Size</th><th class="text-end">Duration</th></tr></thead>
         <tbody>
-          ${items.map(it => {
-            const folder = it.path.replace(/\//g, '');
-            return `<tr>
-              <td class="text-nowrap">${fmtId(it.id)}</td>
-              <td><span class="badge text-bg-success">${it.status}</span></td>
-              <td><code>${it.path}</code></td>
-            </tr>`;
-          }).join('')}
+          ${items.map(it => `<tr>
+            <td class="text-nowrap">${fmtId(it.id)}</td>
+            <td><code>${it.folder}</code></td>
+            <td>${statusBadge(it.status)}</td>
+            <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
+            <td class="text-end text-nowrap">${fmtDuration(it.processing_sec)}</td>
+          </tr>`).join('')}
         </tbody>
       </table>`;
   }
 
-  async function fetchAvailable() {
+  async function fetchTiles() {
+    tileEntries.innerHTML = '<div class="text-secondary small py-2">Loading…</div>';
     try {
-      const data = await fetch('./available').then(r => r.json());
-      applyAvailable(data);
-    } catch { availableEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>'; }
+      const data = await fetch('./tiles').then(r => r.json());
+      applyTiles(data);
+    } catch {
+      tileEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>';
+    }
   }
 
-  document.getElementById('available-refresh-btn').addEventListener('click', fetchAvailable);
+  document.getElementById('tiles-refresh-btn').addEventListener('click', fetchTiles);
   document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
 
   let pollTimer = null;
@@ -358,8 +389,9 @@
       applyStatus(data);
       if (data.status === 'working') interval = 250;
     } catch {
-      dot.className   = 'status-dot';
-      label.textContent = 'unreachable';
+      dot.className          = 'status-dot';
+      label.textContent      = 'unreachable';
+      nextMaintenanceTime    = null;
       maintenanceEl.textContent = '';
       activeTasksSection.style.display = 'none';
     }
@@ -379,7 +411,6 @@
       dot.className     = 'status-dot';
       label.textContent = 'unreachable';
     }
-    await fetchLog();
   }
 
   init().then(() => schedulePoll(500));
