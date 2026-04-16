@@ -24,10 +24,10 @@ import numpy as np
 import mercantile
 from dataclasses import dataclass
 from numba import jit, prange
-from io_ktx import Ktx2
-from bc4 import BC4Compressor
+from utils.io_ktx import Ktx2
+from utils.bc4 import BC4Compressor
 from scipy.ndimage import gaussian_filter
-from util import MAX_ALTITUDE, report_progress
+from utils.general import MAX_ALTITUDE, report_progress
 
 logger = logging.getLogger("shadows")
 

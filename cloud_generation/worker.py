@@ -33,11 +33,11 @@ _TILE_LOCK      = FileLock(os.path.join(_BASE_DIR, ".tile_processor.lock"), poll
 _LOD_SHADOW_LOCK = FileLock(os.path.join(_BASE_DIR, ".lod_shadow.lock"),   poll_interval=1.0)
 
 try:
-    from dwd_connect import DWDDownloader
-    from icon_loader import load_region
-    from tile_processor import TileProcessor, TileConfig
-    from lod_generator import LODGenerator, LODConfig
-    from shadow_map_generator import generate_shadows
+    from .dwd_connect import DWDDownloader
+    from .icon_loader import load_region
+    from .tile_processor import TileProcessor, TileConfig
+    from .lod_generator import LODGenerator, LODConfig
+    from .shadow_map_generator import generate_shadows
 except ImportError as e:
     print(f"Import Error: {e}")
     sys.exit(1)

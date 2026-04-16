@@ -1,6 +1,5 @@
 .venv
 __pycache__
-tiles_output
 *.png
-*.log
+data/
 public-log.json

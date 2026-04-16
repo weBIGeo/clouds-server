@@ -30,8 +30,10 @@ except ImportError:
 
 
 # Import your existing utilities
-from io_ktx import Ktx2
-from bc4 import BC4Compressor
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from utils.io_ktx import Ktx2
+from utils.bc4 import BC4Compressor
 
 
 class CloudMapGenerator:

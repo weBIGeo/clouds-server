@@ -28,8 +28,8 @@ import traceback
 import gc
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
-from icon_loader import DataCube
-from util import report_progress, MAX_ALTITUDE
+from .icon_loader import DataCube
+from utils.general import report_progress, MAX_ALTITUDE
 from scipy.ndimage import gaussian_filter1d
 
 logger = logging.getLogger("tiles")
@@ -455,9 +455,9 @@ class TileSaver:
 class TileProcessor:
     """Main processor for generating cloud tiles from meteorological data."""
 
-    SHADER_PATH = "shaders/cloud_synthesis.wgsl"
-    # SHADER_PATH = "shaders/cloud_upscale-only.wgsl"
-    POSTPROCESS_SHADER_PATH = "shaders/postprocess.wgsl"
+    SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/cloud_synthesis.wgsl")
+    # SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/cloud_upscale-only.wgsl")
+    POSTPROCESS_SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/postprocess.wgsl")
     WORKGROUP_SIZE = 8
 
     def __init__(self, datacube: DataCube, output_dir: str, config: TileConfig = None):

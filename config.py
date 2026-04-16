@@ -17,7 +17,7 @@
 #############################################################################
 
 # Directory where generated tile sets are stored.
-tile_cache_dir = "tiles_output"
+tile_cache_dir = "data/tile_cache"
 
 # Maximum total size of the tile cache directory. Processing is skipped when exceeded.
 tile_cache_max_size = 100 * 1024 * 1024 * 1024  # 100 GiB
@@ -34,7 +34,7 @@ log_level = "DEBUG"
 # NOTE: Logs for the tile creation progress are stored in the respective tile folders. The following values
 # only affect the server's own console log output.
 # Log file path. Set to empty string to disable file logging.
-log_file = "latest.log"
+log_file = "data/latest.log"
 # Log file rotation: maximum size per file in bytes and number of backup files to keep.
 log_file_max_bytes = 5 * 1024 * 1024  # 5 MiB
 log_file_backup_count = 3
