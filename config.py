@@ -16,6 +16,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
+# Maximum altitude used for cloud layer normalisation (metres).
+# MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
+max_altitude = 14000.0  # Sensible maximum altitude
+
 # Directory where generated tile sets are stored.
 tile_cache_dir = "data/tile_cache"
 

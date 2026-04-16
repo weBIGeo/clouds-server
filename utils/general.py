@@ -35,8 +35,6 @@ def read_version() -> str:
         pass
     return "unknown"
 
-# MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
-MAX_ALTITUDE = 14000.0  # Sensible maximum altitude
 
 # Each section's (start_offset, weight) as fractions summing to 1.0.
 _SECTION_WEIGHTS: dict[str, tuple[float, float]] = {
