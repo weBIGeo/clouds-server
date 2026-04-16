@@ -28,7 +28,7 @@ import logging
 import config
 import db
 from datetime import datetime, timedelta, timezone
-from tile_cache import (
+from tilesets import (
     scan_existing_folders,
     get_best_run_and_step,
     get_scheme_rule,
@@ -71,9 +71,9 @@ def worker_loop():
     while True:
         pending_tasks_ready.wait()
 
-        task = db.tile_claim_pending()
+        task = db.tileset_claim_pending()
         if task is None:
-            if db.tile_count_pending() == 0:
+            if db.tileset_count_pending() == 0:
                 pending_tasks_ready.clear()
             continue
 
@@ -84,17 +84,17 @@ def worker_loop():
         task_key = (run_str, step)
         maintenance_id = task.get("maintenance_id")
 
-        current_cache_size = db.tile_get_cache_size()
-        if current_cache_size >= config.tile_cache_max_size:
+        current_cache_size = db.tileset_get_size()
+        if current_cache_size >= config.tilesets_max_size:
             logger.warning(
                 f"Tile cache size ({current_cache_size / 1e9:.1f} GB) exceeds limit "
-                f"({config.tile_cache_max_size / 1e9:.0f} GB), skipping {run_str}+{step}h"
+                f"({config.tilesets_max_size / 1e9:.0f} GB), skipping {run_str}+{step}h"
             )
-            db.tile_set_status(folder_name, "pending")
+            db.tileset_set_status(folder_name, "pending")
             pending_tasks_ready.clear()
             continue
 
-        output_dir = os.path.join(os.path.abspath(config.tile_cache_dir), folder_name)
+        output_dir = os.path.join(os.path.abspath(config.tileset_cache_dir), folder_name)
         os.makedirs(output_dir, exist_ok=True)
 
         invalid_path = os.path.join(output_dir, "invalid")
@@ -120,7 +120,7 @@ def worker_loop():
                 "percent": 0,
             }
 
-        queue_depth = db.tile_count_pending()
+        queue_depth = db.tileset_count_pending()
         logger.info(f"Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
         start_time = time.monotonic()
         success = False
@@ -146,18 +146,18 @@ def worker_loop():
 
             if process.returncode != 0:
                 logger.error(f"Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
-                db.tile_set_status(folder_name, "failed")
+                db.tileset_set_status(folder_name, "failed")
             else:
                 os.remove(invalid_path)
                 elapsed = time.monotonic() - start_time
                 size = compute_folder_size(output_dir)
-                db.tile_set_ready(folder_name, size, elapsed)
+                db.tileset_set_ready(folder_name, size)
                 logger.info(f"Done: run {run_str} +{step}h ({elapsed:.1f}s, {size / 1e6:.1f} MB)")
                 success = True
 
         except Exception as e:
             logger.error(f"Error launching worker: {e}")
-            db.tile_set_status(folder_name, "failed")
+            db.tileset_set_status(folder_name, "failed")
         finally:
             with processing_lock:
                 task_progress.pop(task_key, None)
@@ -165,7 +165,7 @@ def worker_loop():
         # Remove any stale folders for the same target time
         if success:
             target_dt = run_dt + timedelta(hours=step)
-            base_dir = os.path.abspath(config.tile_cache_dir)
+            base_dir = os.path.abspath(config.tileset_cache_dir)
             for name in os.listdir(base_dir):
                 if name == folder_name:
                     continue
@@ -176,7 +176,7 @@ def worker_loop():
                     r2, s2 = name.split("_", 1)
                     if datetime.strptime(r2, "%Y%m%d%H") + timedelta(hours=int(s2)) == target_dt:
                         shutil.rmtree(path, ignore_errors=True)
-                        db.tile_delete(name)
+                        db.tileset_delete(name)
                         logger.debug(f"Removed stale folder: {name}")
                         if maintenance_id is not None:
                             db.maintenance_add_renewed(maintenance_id, name)
@@ -204,7 +204,7 @@ def auto_build_all():
                 targets.append(datetime(day.year, day.month, day.day, h))
 
     # Build lookup of target_str -> DB row for already-known targets
-    db_state = {r["target_str"]: r for r in db.tile_get_all()}
+    db_state = {r["target_str"]: r for r in db.tileset_get_all()}
 
     added = 0
     queued: list[tuple[str, tuple[str, int]]] = []
@@ -231,40 +231,35 @@ def auto_build_all():
                 continue  # already at best run
             if db_entry["status"] == "pending" and db_entry["folder"] != folder:
                 # Newer run available — delete the stale pending entry and queue the new one
-                db.tile_delete(db_entry["folder"])
+                db.tileset_delete(db_entry["folder"])
                 logger.debug(f"AutoBuild: replaced stale pending {db_entry['folder']} with {folder}")
             elif db_entry["status"] == "failed" and db_entry["folder"] == folder:
                 # Re-attempt same failed run on next maintenance
-                db.tile_set_status(folder, "pending")
+                db.tileset_set_status(folder, "pending")
                 queued.append((folder, task_key))
                 added += 1
                 logger.debug(f"AutoBuild: retrying failed {folder} (target {time_id})")
                 continue
 
-        inserted = db.tile_upsert(folder, run_str, best_step, time_id)
+        inserted = db.tileset_upsert(folder, run_str, best_step, time_id)
         if inserted:
             queued.append((folder, task_key))
             added += 1
             logger.debug(f"AutoBuild: {folder} (target {time_id})")
 
     logger.info(f"AutoBuild done: {added} added")
-
-    # Signal workers if there are pending tasks (including previously queued ones)
-    if db.tile_count_pending() > 0:
-        pending_tasks_ready.set()
-
     return queued
 
 
 def purge_old_data():
     """Remove invalid dirs and apply the tile_retention_policy rules."""
-    base_dir = os.path.abspath(config.tile_cache_dir)
+    base_dir = os.path.abspath(config.tileset_cache_dir)
     if not os.path.exists(base_dir):
         return []
 
     # Build set of folders currently being fetched or failed in DB — skip purging these
-    fetching_folders = {r["folder"] for r in db.tile_get_all(status="fetching")}
-    failed_folders = {r["folder"] for r in db.tile_get_all(status="failed")}
+    fetching_folders = {r["folder"] for r in db.tileset_get_all(status="fetching")}
+    failed_folders = {r["folder"] for r in db.tileset_get_all(status="failed")}
 
     purged: list[str] = []
     for entry in scan_existing_folders().values():
@@ -280,7 +275,7 @@ def purge_old_data():
         if not entry["ready"]:
             logger.debug(f"Purge: {entry['folder']} (invalid/incomplete)")
             shutil.rmtree(path, ignore_errors=True)
-            db.tile_delete(entry["folder"])
+            db.tileset_delete(entry["folder"])
             purged.append(entry["folder"])
             continue
 
@@ -293,7 +288,7 @@ def purge_old_data():
         if rule["mode"] != "fetch_only" and target_dt.hour not in rule["hours"]:
             logger.debug(f"Purge: {entry['folder']} (hour {target_dt.hour} not in retention policy hours {rule['hours']})")
             shutil.rmtree(path, ignore_errors=True)
-            db.tile_delete(entry["folder"])
+            db.tileset_delete(entry["folder"])
             purged.append(entry["folder"])
 
     logger.info(f"Purge: removed {len(purged)} tile set(s)")
@@ -304,7 +299,7 @@ def _check_maintenance_completion():
     """Called by worker_loop after each task finishes.
     Completes any maintenance record whose tiles are all done."""
     for row in db.maintenance_get_incomplete():
-        if db.tile_count_active_for_maintenance(row["id"]) > 0:
+        if db.tileset_count_active_for_maintenance(row["id"]) > 0:
             continue
         completed = db.maintenance_complete(row["id"])
         added   = json.loads(completed["added"])
@@ -334,7 +329,8 @@ def _run_maintenance(name=None):
     if queued:
         mid = db.maintenance_create(label, [f for f, _ in queued], purged_folders)
         for folder, _ in queued:
-            db.tile_set_maintenance(folder, mid)
+            db.tileset_set_maintenance(folder, mid)
+        pending_tasks_ready.set()
     else:
         purged_str = ", ".join(purged_folders) or "none"
         summary = f"{label} Maintenance completed after 0.0 min"

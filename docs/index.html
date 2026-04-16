@@ -113,7 +113,7 @@
   "active": {
     "2026041312_001": { "stage": "download", "detail": "133/522 files", "percent": 25 }
   },
-  "tile_cache": { "size": 4831838208, "max": 10737418240 }
+  "tilesets": { "size": 4831838208, "max": 10737418240 }
 }</code></pre>
           <table class="table table-sm small mb-0">
             <thead><tr><th>Field</th><th>Description</th></tr></thead>
@@ -122,8 +122,8 @@
               <tr><td><code>status</code></td><td><code>"idle"</code> or <code>"working"</code> (based on actively running tasks)</td></tr>
               <tr><td><code>next_maintenance</code></td><td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td></tr>
               <tr><td><code>active</code></td><td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with live <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td></tr>
-              <tr><td><code>tile_cache.size</code></td><td>Total bytes used by ready tile sets</td></tr>
-              <tr><td><code>tile_cache.max</code></td><td>Configured cache size limit in bytes</td></tr>
+              <tr><td><code>tilesets.size</code></td><td>Total bytes used by ready tile sets</td></tr>
+              <tr><td><code>tilesets.max</code></td><td>Configured cache size limit in bytes</td></tr>
             </tbody>
           </table>
         </div>
@@ -132,7 +132,7 @@
       <div class="card mb-3">
         <div class="card-header d-flex align-items-center gap-2">
           <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/tiles</code>
+          <code>/tilesets</code>
         </div>
         <div class="card-body">
           <p class="text-secondary small">Returns all known tile sets from the database, optionally filtered by status. Sorted by target time ascending.</p>
@@ -156,7 +156,7 @@
       "size": 123456789,
       "queued_at": "2026-04-08T09:00:00Z",
       "completed_at": "2026-04-08T09:15:42Z",
-      "processing_sec": 942.3
+
     }
   ]
 }</code></pre>
@@ -172,7 +172,7 @@
               <tr><td><code>size</code></td><td>Total size in bytes (only set when <code>status=ready</code>)</td></tr>
               <tr><td><code>queued_at</code></td><td>ISO 8601 UTC timestamp when first queued</td></tr>
               <tr><td><code>completed_at</code></td><td>ISO 8601 UTC timestamp when marked ready (only set when <code>status=ready</code>)</td></tr>
-              <tr><td><code>processing_sec</code></td><td>Wall-clock seconds from queue claim to ready (only set when <code>status=ready</code>)</td></tr>
+
             </tbody>
           </table>
         </div>
@@ -209,7 +209,7 @@
         </div>
         <div class="card-body">
           <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
-            of the <code>path</code> field returned by <code>/tiles</code> (e.g. <code>2026040809_003</code>).</p>
+            of the <code>path</code> field returned by <code>/tilesets</code> (e.g. <code>2026040809_003</code>). The <code>tiles</code> sub-path is fixed.</p>
         </div>
       </div>
 
@@ -262,13 +262,7 @@
     return `${d}.${mo}.${y} ${h}:00`;
   }
 
-  function fmtDuration(sec) {
-    if (sec == null) return '—';
-    if (sec < 60) return sec.toFixed(0) + 's';
-    return (sec / 60).toFixed(1) + 'min';
-  }
-
-  function statusBadge(status) {
+function statusBadge(status) {
     const map = { ready: 'success', pending: 'secondary', fetching: 'warning', failed: 'danger' };
     return `<span class="badge text-bg-${map[status] || 'secondary'}">${status}</span>`;
   }
@@ -292,7 +286,7 @@
     nextMaintenanceTime = data.next_maintenance ? new Date(data.next_maintenance).getTime() : null;
     updateCountdown();
 
-    const tc = data.tile_cache;
+    const tc = data.tilesets;
     if (tc) {
       const pct = Math.min(100, (tc.size / tc.max) * 100);
       cacheProgressBar.style.width = pct + '%';
@@ -353,14 +347,13 @@
     }
     tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
-        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Size</th><th class="text-end">Duration</th></tr></thead>
+        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Size</th></tr></thead>
         <tbody>
           ${items.map(it => `<tr>
             <td class="text-nowrap">${fmtId(it.id)}</td>
             <td><code>${it.folder}</code></td>
             <td>${statusBadge(it.status)}</td>
             <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
-            <td class="text-end text-nowrap">${fmtDuration(it.processing_sec)}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
@@ -369,7 +362,7 @@
   async function fetchTiles() {
     tileEntries.innerHTML = '<div class="text-secondary small py-2">Loading…</div>';
     try {
-      const data = await fetch('./tiles').then(r => r.json());
+      const data = await fetch('./tilesets').then(r => r.json());
       applyTiles(data);
     } catch {
       tileEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>';

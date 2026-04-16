@@ -1,6 +1,6 @@
 # ☁️ weBIGeo Cloud Server
 
-![Version](https://img.shields.io/badge/version-1.4-blue) ![License](https://img.shields.io/github/license/webigeo/clouds-server)
+![Version](https://img.shields.io/badge/version-2.0-blue) ![License](https://img.shields.io/github/license/webigeo/clouds-server)
 
 Preprocessing server for real-time volumetric cloud rendering in the browser. Originally developed by **Wendelin Muth** as part of his bachelor thesis at TU Wien:
 

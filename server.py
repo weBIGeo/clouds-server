@@ -26,7 +26,7 @@ import log_config
 import utils.general as util
 import db
 import scheduler
-import tile_cache
+import tilesets
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from waitress import serve
@@ -57,17 +57,17 @@ def server_status():
         "status": "working" if active else "idle",
         "next_maintenance": scheduler.next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if scheduler.next_maintenance else None,
         "active": active,
-        "tile_cache": {
-            "size": db.tile_get_cache_size(),
-            "max": config.tile_cache_max_size,
+        "tilesets": {
+            "size": db.tileset_get_size(),
+            "max": config.tilesets_max_size,
         },
     })
 
 
-@app.route("/tiles", methods=["GET"])
-def list_tiles():
+@app.route("/tilesets", methods=["GET"])
+def list_tilesets():
     status_filter = request.args.get("status") or None
-    rows = db.tile_get_all(status=status_filter)
+    rows = db.tileset_get_all(status=status_filter)
     items = [
         {
             "id": r["target_str"],
@@ -79,7 +79,6 @@ def list_tiles():
             "size": r["size"],
             "queued_at": r["queued_at"],
             "completed_at": r["completed_at"],
-            "processing_sec": r["processing_sec"],
         }
         for r in rows
     ]
@@ -110,14 +109,14 @@ def serve_tiles(filename):
 
         # We send from the specific run_step folder
         return send_from_directory(
-            os.path.join(os.path.abspath(config.tile_cache_dir), folder), real_filename
+            os.path.join(os.path.abspath(config.tileset_cache_dir), folder), real_filename
         )
     
     shadow_match = re.match(r"^([^/]+)/shadow\.ktx2$", filename)
     if shadow_match:
         folder = shadow_match.group(1)
         return send_from_directory(
-            os.path.join(os.path.abspath(config.tile_cache_dir), folder), "shadow.ktx2"
+            os.path.join(os.path.abspath(config.tileset_cache_dir), folder), "shadow.ktx2"
         )
 
     return ("Forbidden", 403)
@@ -133,7 +132,9 @@ if __name__ == "__main__":
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
-    tile_cache.sync_from_disk()
+    tilesets.sync_from_disk()
+    if db.tileset_count_pending() > 0:
+        scheduler.pending_tasks_ready.set()
 
     if not config.only_serve:
         for i in range(config.worker_threads):

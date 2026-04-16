@@ -27,7 +27,7 @@ import config
 import db
 from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger("tile_cache")
+logger = logging.getLogger("tilesets")
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
@@ -163,12 +163,12 @@ def get_best_run_and_step(target_time):
 
 def get_folder_path(run_time, step):
     folder_name = f"{run_time.strftime('%Y%m%d%H')}_{step:03d}"
-    return os.path.join(os.path.abspath(config.tile_cache_dir), folder_name), folder_name
+    return os.path.join(os.path.abspath(config.tileset_cache_dir), folder_name), folder_name
 
 
 def scan_existing_folders():
     results = {}
-    base_dir = os.path.abspath(config.tile_cache_dir)
+    base_dir = os.path.abspath(config.tileset_cache_dir)
     if not os.path.exists(base_dir):
         return results
 
@@ -209,19 +209,19 @@ def compute_folder_size(folder_path: str) -> int:
 
 
 def sync_from_disk() -> None:
-    """Reconcile the tile_cache DB table with the actual filesystem on startup.
+    """Reconcile the tilesets DB table with the actual filesystem on startup.
 
     Handles all restart-recovery cases so the DB is the authoritative source of
     truth before any worker threads begin.
     """
-    base_dir = os.path.abspath(config.tile_cache_dir)
+    base_dir = os.path.abspath(config.tileset_cache_dir)
     os.makedirs(base_dir, exist_ok=True)
 
     disk_folders = scan_existing_folders()  # target_str -> entry dict
     # Build a flat map of folder_name -> disk entry for quick lookup
     disk_by_folder = {e["folder"]: e for e in disk_folders.values()}
 
-    db_rows = {r["folder"]: r for r in db.tile_get_all()}
+    db_rows = {r["folder"]: r for r in db.tileset_get_all()}
 
     # --- Reconcile DB rows against disk ---
     for folder, row in db_rows.items():
@@ -236,25 +236,25 @@ def sync_from_disk() -> None:
                     logger.info(f"sync_from_disk: removed orphaned folder {folder}, requeueing")
                 else:
                     logger.info(f"sync_from_disk: fetching task {folder} has no folder, requeueing")
-                db.tile_set_status(folder, "pending")
+                db.tileset_set_status(folder, "pending")
             else:
                 # Folder is valid — server crashed after completion but before DB update
                 size = compute_folder_size(path)
-                db.tile_set_ready(folder, size, 0.0)
+                db.tileset_set_ready(folder, size)
                 logger.info(f"sync_from_disk: adopted completed folder {folder} ({size} bytes)")
 
         elif row["status"] == "pending":
             if disk is not None and disk["ready"]:
                 # Folder is already valid on disk — promote to ready
                 size = compute_folder_size(path)
-                db.tile_set_ready(folder, size, 0.0)
+                db.tileset_set_ready(folder, size)
                 logger.info(f"sync_from_disk: promoted pending {folder} to ready ({size} bytes)")
             # pending with no folder on disk: leave as-is, workers will claim it
 
         elif row["status"] == "ready":
             if disk is None:
                 # Folder was deleted externally — remove from DB
-                db.tile_delete(folder)
+                db.tileset_delete(folder)
                 logger.info(f"sync_from_disk: removed DB entry for missing folder {folder}")
 
     # --- Adopt disk folders not known to DB ---
@@ -266,8 +266,8 @@ def sync_from_disk() -> None:
             run_str = entry["run"].strftime("%Y%m%d%H")
             target_str = (entry["run"] + timedelta(hours=entry["step"])).strftime("%Y%m%d%H")
             size = compute_folder_size(path)
-            db.tile_upsert(folder, run_str, entry["step"], target_str)
-            db.tile_set_ready(folder, size, 0.0)
+            db.tileset_upsert(folder, run_str, entry["step"], target_str)
+            db.tileset_set_ready(folder, size)
             logger.info(f"sync_from_disk: adopted unknown folder {folder} ({size} bytes)")
         else:
             # Invalid/incomplete folder with no DB record — discard

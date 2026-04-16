@@ -32,6 +32,13 @@ def init(path: str = "data/clouds-server.db") -> None:
     _conn = sqlite3.connect(path, check_same_thread=False)
     _conn.row_factory = sqlite3.Row
     with _lock:
+        # Migrate old table name if present
+        try:
+            _conn.execute("ALTER TABLE tile_cache RENAME TO tilesets")
+            _conn.commit()
+        except sqlite3.OperationalError:
+            pass  # already renamed or never existed
+
         _conn.executescript("""
             CREATE TABLE IF NOT EXISTS public_log (
                 id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,24 +57,25 @@ def init(path: str = "data/clouds-server.db") -> None:
                 renewed      TEXT NOT NULL DEFAULT '[]'
             );
 
-            CREATE TABLE IF NOT EXISTS tile_cache (
-                folder          TEXT PRIMARY KEY,
-                run_str         TEXT NOT NULL,
-                step            INTEGER NOT NULL,
-                target_str      TEXT NOT NULL,
-                status          TEXT NOT NULL,
-                size            INTEGER,
-                queued_at       TEXT NOT NULL,
-                completed_at    TEXT,
-                processing_sec  REAL,
-                maintenance_id  INTEGER
+            CREATE TABLE IF NOT EXISTS tilesets (
+                folder         TEXT PRIMARY KEY,
+                run_str        TEXT NOT NULL,
+                step           INTEGER NOT NULL,
+                target_str     TEXT NOT NULL,
+                status         TEXT NOT NULL,
+                size           INTEGER,
+                queued_at      TEXT NOT NULL,
+                completed_at   TEXT,
+                maintenance_id INTEGER
             );
-            CREATE INDEX IF NOT EXISTS idx_tile_cache_status ON tile_cache(status);
-            CREATE INDEX IF NOT EXISTS idx_tile_cache_target ON tile_cache(target_str);
+            CREATE INDEX IF NOT EXISTS idx_tilesets_status ON tilesets(status);
+            CREATE INDEX IF NOT EXISTS idx_tilesets_target ON tilesets(target_str);
         """)
-        # Idempotent migration for databases created before maintenance_id existed
+        _conn.commit()
+
+        # Idempotent migration: add maintenance_id if missing (pre-rename databases)
         try:
-            _conn.execute("ALTER TABLE tile_cache ADD COLUMN maintenance_id INTEGER")
+            _conn.execute("ALTER TABLE tilesets ADD COLUMN maintenance_id INTEGER")
             _conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
@@ -155,16 +163,16 @@ def maintenance_get_incomplete() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Tile cache
+# Tilesets
 # ---------------------------------------------------------------------------
 
-def tile_upsert(folder: str, run_str: str, step: int, target_str: str) -> bool:
-    """Insert a new pending tile entry. No-op if the folder already exists.
+def tileset_upsert(folder: str, run_str: str, step: int, target_str: str) -> bool:
+    """Insert a new pending tileset entry. No-op if the folder already exists.
     Returns True if a new row was inserted."""
     queued_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _lock:
         cur = _conn.execute(
-            "INSERT OR IGNORE INTO tile_cache (folder, run_str, step, target_str, status, queued_at)"
+            "INSERT OR IGNORE INTO tilesets (folder, run_str, step, target_str, status, queued_at)"
             " VALUES (?, ?, ?, ?, 'pending', ?)",
             (folder, run_str, step, target_str, queued_at),
         )
@@ -172,102 +180,102 @@ def tile_upsert(folder: str, run_str: str, step: int, target_str: str) -> bool:
         return cur.rowcount > 0
 
 
-def tile_claim_pending() -> dict | None:
-    """Atomically claim one pending tile for processing.
+def tileset_claim_pending() -> dict | None:
+    """Atomically claim one pending tileset for processing.
 
     Selects the oldest pending row, flips its status to 'fetching', and returns
     it as a dict (including maintenance_id).  Returns None if the queue is empty.
     """
     with _lock:
         row = _conn.execute(
-            "SELECT folder, run_str, step, target_str, maintenance_id FROM tile_cache"
+            "SELECT folder, run_str, step, target_str, maintenance_id FROM tilesets"
             " WHERE status = 'pending' ORDER BY rowid LIMIT 1"
         ).fetchone()
         if row is None:
             return None
         _conn.execute(
-            "UPDATE tile_cache SET status = 'fetching' WHERE folder = ?",
+            "UPDATE tilesets SET status = 'fetching' WHERE folder = ?",
             (row["folder"],),
         )
         _conn.commit()
         return dict(row)
 
 
-def tile_set_ready(folder: str, size: int, processing_sec: float) -> None:
-    """Mark a tile as ready and record its size and processing duration."""
+def tileset_set_ready(folder: str, size: int) -> None:
+    """Mark a tileset as ready and record its size."""
     completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _lock:
         _conn.execute(
-            "UPDATE tile_cache SET status = 'ready', size = ?, completed_at = ?, processing_sec = ?"
+            "UPDATE tilesets SET status = 'ready', size = ?, completed_at = ?"
             " WHERE folder = ?",
-            (size, completed_at, processing_sec, folder),
+            (size, completed_at, folder),
         )
         _conn.commit()
 
 
-def tile_set_status(folder: str, status: str) -> None:
-    """Update the status of a tile entry (e.g. requeue fetching→pending)."""
+def tileset_set_status(folder: str, status: str) -> None:
+    """Update the status of a tileset entry."""
     with _lock:
         _conn.execute(
-            "UPDATE tile_cache SET status = ? WHERE folder = ?",
+            "UPDATE tilesets SET status = ? WHERE folder = ?",
             (status, folder),
         )
         _conn.commit()
 
 
-def tile_set_maintenance(folder: str, maintenance_id: int) -> None:
-    """Link a tile entry to a maintenance record."""
+def tileset_set_maintenance(folder: str, maintenance_id: int) -> None:
+    """Link a tileset entry to a maintenance record."""
     with _lock:
         _conn.execute(
-            "UPDATE tile_cache SET maintenance_id = ? WHERE folder = ?",
+            "UPDATE tilesets SET maintenance_id = ? WHERE folder = ?",
             (maintenance_id, folder),
         )
         _conn.commit()
 
 
-def tile_delete(folder: str) -> None:
-    """Remove a tile entry from the database."""
+def tileset_delete(folder: str) -> None:
+    """Remove a tileset entry from the database."""
     with _lock:
-        _conn.execute("DELETE FROM tile_cache WHERE folder = ?", (folder,))
+        _conn.execute("DELETE FROM tilesets WHERE folder = ?", (folder,))
         _conn.commit()
 
 
-def tile_get_all(status: str | None = None) -> list[dict]:
-    """Return all tile entries, optionally filtered by status."""
+def tileset_get_all(status: str | None = None) -> list[dict]:
+    """Return all tileset entries, optionally filtered by status."""
     with _lock:
         if status is None:
-            rows = _conn.execute("SELECT * FROM tile_cache ORDER BY rowid").fetchall()
+            rows = _conn.execute("SELECT * FROM tilesets ORDER BY rowid").fetchall()
         else:
             rows = _conn.execute(
-                "SELECT * FROM tile_cache WHERE status = ? ORDER BY rowid",
+                "SELECT * FROM tilesets WHERE status = ? ORDER BY rowid",
                 (status,),
             ).fetchall()
     return [dict(r) for r in rows]
 
 
-def tile_get_cache_size() -> int:
-    """Return the total size in bytes of all ready tile sets."""
+def tileset_get_size() -> int:
+    """Return the total size in bytes of all ready tilesets."""
     with _lock:
         row = _conn.execute(
-            "SELECT COALESCE(SUM(size), 0) AS total FROM tile_cache WHERE status = 'ready'"
+            "SELECT COALESCE(SUM(size), 0) AS total FROM tilesets WHERE status = 'ready'"
         ).fetchone()
     return int(row["total"])
 
 
-def tile_count_pending() -> int:
-    """Return the number of pending tile entries."""
+def tileset_count_pending() -> int:
+    """Return the number of pending tileset entries."""
     with _lock:
         row = _conn.execute(
-            "SELECT COUNT(*) AS cnt FROM tile_cache WHERE status = 'pending'"
+            "SELECT COUNT(*) AS cnt FROM tilesets WHERE status = 'pending'"
         ).fetchone()
     return int(row["cnt"])
 
 
-def tile_count_active_for_maintenance(maintenance_id: int) -> int:
-    """Return the number of pending or fetching tiles linked to a maintenance record."""
+def tileset_count_active_for_maintenance(maintenance_id: int) -> int:
+    """Return the number of pending or fetching tilesets linked to a maintenance record."""
     with _lock:
         row = _conn.execute(
-            "SELECT COUNT(*) AS cnt FROM tile_cache"
+            "SELECT COUNT(*) AS cnt FROM tilesets"
             " WHERE maintenance_id = ? AND status IN ('pending', 'fetching')",
             (maintenance_id,),
         ).fetchone()

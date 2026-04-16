@@ -21,10 +21,10 @@
 max_altitude = 14000.0  # Sensible maximum altitude
 
 # Directory where generated tile sets are stored.
-tile_cache_dir = "data/tile_cache"
+tileset_cache_dir = "data/tileset_cache"
 
-# Maximum total size of the tile cache directory. Processing is skipped when exceeded.
-tile_cache_max_size = 100 * 1024 * 1024 * 1024  # 100 GiB
+# Maximum total size of the tileset cache directory. Processing is skipped when exceeded.
+tilesets_max_size = 100 * 1024 * 1024 * 1024  # 100 GiB
 
 # Host and port the server listens on.
 # Use "0.0.0.0" to accept connections from any network interface.
