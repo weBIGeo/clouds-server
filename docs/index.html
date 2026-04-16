@@ -1,19 +1,25 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>weBIGeo Cloud Server</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <script>
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    document.documentElement.setAttribute('data-bs-theme', mq.matches ? 'dark' : 'light');
+    mq.addEventListener('change', e => document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light'));
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/flatly/bootstrap.min.css">
   <style>
     .status-dot {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
       display: inline-block; background: #6c757d;
     }
-    .status-dot.idle    { background: #3fb950; }
-    .status-dot.working { background: #f0883e; animation: pulse 1s ease-in-out infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .status-dot.idle    { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .status-dot.working { background: #f0883e; box-shadow: 0 0 6px #f0883e; animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
     .log-msg { white-space: pre-wrap; word-break: break-word; }
+    .status-card { border: 1px solid #2a2a2a; border-radius: .5rem; }
   </style>
 </head>
 <body>
@@ -27,14 +33,12 @@
   </div>
 
   <!-- === STATUS === -->
-  <div class="d-flex align-items-center gap-2 mb-3">
-    <div class="w-100">
-      <div class="d-flex align-items-center gap-2">
+  <div class="status-card px-4 py-3 mb-4">
+    <div class="d-flex align-items-center gap-3">
       <span class="status-dot" id="status-dot"></span>
-      <span class="fw-semibold text-capitalize large" id="status-label">connecting…</span>
-      </div>
-      <div class="small text-secondary mt-2" id="status-maintenance"></div>
+      <span class="fs-5 fw-semibold text-capitalize" id="status-label">connecting…</span>
     </div>
+    <div class="small text-secondary mt-2" id="status-maintenance"></div>
   </div>
 
   <!-- === ACTIVE TASKS === -->
@@ -79,8 +83,8 @@
         <span>Tile Cache</span>
         <span id="cache-size-label">…</span>
       </div>
-      <div class="progress mb-3" style="height:6px">
-        <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
+      <div class="progress mb-3">
+        <div class="progress-bar progress-bar-striped bg-info" id="cache-progress-bar" style="width:0%"></div><!-- classes managed by JS -->
       </div>
       <button class="btn btn-outline-secondary w-100 mb-2" id="tiles-refresh-btn">Refresh Tile Information</button>
       <div id="tile-entries"><div class="text-secondary small py-2">Click the button above to load tile set information.</div></div>
@@ -88,7 +92,7 @@
 
     <!-- === EVENT LOG === -->
     <div class="tab-pane fade" id="tab-log" role="tabpanel">
-      <button class="btn btn-outline-secondary w-100 mt-3" id="log-refresh-btn">Refresh Event Log</button>
+      <button class="btn btn-outline-secondary w-100 mt-3 mb-2" id="log-refresh-btn">Refresh Event Log</button>
       <div id="log-entries">
         <div class="text-secondary small py-2">Click the button above to load log entries.</div>
       </div>
@@ -290,7 +294,7 @@ function statusBadge(status) {
     if (tc) {
       const pct = Math.min(100, (tc.size / tc.max) * 100);
       cacheProgressBar.style.width = pct + '%';
-      cacheProgressBar.className = 'progress-bar' + (pct >= 90 ? ' bg-danger' : pct >= 70 ? ' bg-warning' : '');
+      cacheProgressBar.className = 'progress-bar progress-bar-striped' + (pct >= 100 ? ' bg-danger' : pct >= 80 ? ' bg-warning' : ' bg-info');
       cacheSizeLabel.textContent = fmtBytes(tc.size) + ' / ' + fmtBytes(tc.max);
     }
 
@@ -305,8 +309,8 @@ function statusBadge(status) {
             <span class="ms-auto small">${p.percent ?? 0}%</span>
           </div>
           <div class="small text-secondary text-truncate mb-1">${escapeHtml(p.detail || '')}</div>
-          <div class="progress" style="height:4px">
-            <div class="progress-bar" style="width:${p.percent ?? 0}%"></div>
+          <div class="progress" style="height:10px">
+            <div class="progress-bar progress-bar-striped bg-info" style="width:${p.percent ?? 0}%"></div>
           </div>
         </div>`).join('');
       activeTasksSection.style.display = 'block';
@@ -320,6 +324,7 @@ function statusBadge(status) {
     if (!entries.length) { logEntries.innerHTML = '<div class="text-secondary small py-2">No entries.</div>'; return; }
     logEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
+        <thead><tr><th>Time (UTC)</th><th>Message</th></tr></thead>
         <tbody>
           ${[...entries].reverse().map(e => `
           <tr>
