@@ -184,7 +184,8 @@ def tileset_claim_pending() -> dict | None:
     """Atomically claim one pending tileset for processing.
 
     Selects the oldest pending row, flips its status to 'fetching', and returns
-    it as a dict (including maintenance_id).  Returns None if the queue is empty.
+    it as a dict (including maintenance_id and queue_depth = remaining pending count).
+    Returns None if the queue is empty.
     """
     with _lock:
         row = _conn.execute(
@@ -197,8 +198,13 @@ def tileset_claim_pending() -> dict | None:
             "UPDATE tilesets SET status = 'fetching' WHERE folder = ?",
             (row["folder"],),
         )
+        count = _conn.execute(
+            "SELECT COUNT(*) AS cnt FROM tilesets WHERE status = 'pending'"
+        ).fetchone()
         _conn.commit()
-        return dict(row)
+        result = dict(row)
+        result["queue_depth"] = int(count["cnt"])
+        return result
 
 
 def tileset_set_ready(folder: str, size: int) -> None:

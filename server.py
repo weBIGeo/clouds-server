@@ -134,7 +134,7 @@ if __name__ == "__main__":
     logger.info(sep)
     tilesets.sync_from_disk()
     if db.tileset_count_pending() > 0:
-        scheduler.pending_tasks_ready.set()
+        scheduler.pending_tasks_available.set()
 
     if not config.only_serve:
         for i in range(config.worker_threads):

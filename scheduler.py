@@ -37,7 +37,7 @@ from tilesets import (
 
 logger = logging.getLogger("scheduler")
 
-pending_tasks_ready = threading.Event()
+pending_tasks_available = threading.Event()
 processing_lock = threading.Lock()
 task_progress = {}
 next_maintenance: datetime | None = None
@@ -69,12 +69,12 @@ def worker_output_reader(process, task_key, log_file_path):
 
 def worker_loop():
     while True:
-        pending_tasks_ready.wait()
+        pending_tasks_available.wait()
 
         task = db.tileset_claim_pending()
         if task is None:
             if db.tileset_count_pending() == 0:
-                pending_tasks_ready.clear()
+                pending_tasks_available.clear()
             continue
 
         folder_name = task["folder"]
@@ -91,7 +91,7 @@ def worker_loop():
                 f"({config.tilesets_max_size / 1e9:.0f} GB), skipping {run_str}+{step}h"
             )
             db.tileset_set_status(folder_name, "pending")
-            pending_tasks_ready.clear()
+            pending_tasks_available.clear()
             continue
 
         output_dir = os.path.join(os.path.abspath(config.tileset_cache_dir), folder_name)
@@ -120,7 +120,7 @@ def worker_loop():
                 "percent": 0,
             }
 
-        queue_depth = db.tileset_count_pending()
+        queue_depth = task.get("queue_depth", 0)
         logger.info(f"Processing: run {run_str} +{step}h (queue: {queue_depth} remaining)")
         start_time = time.monotonic()
         success = False
@@ -330,7 +330,7 @@ def _run_maintenance(name=None):
         mid = db.maintenance_create(label, [f for f, _ in queued], purged_folders)
         for folder, _ in queued:
             db.tileset_set_maintenance(folder, mid)
-        pending_tasks_ready.set()
+        pending_tasks_available.set()
     else:
         purged_str = ", ".join(purged_folders) or "none"
         summary = f"{label} Maintenance completed after 0.0 min"
