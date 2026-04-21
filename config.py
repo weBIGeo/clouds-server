@@ -97,9 +97,11 @@ tile_retention_policy = [
 ]
 
 # UTC times (HH:MM) at which the auto-build and archive tasks run.
-# The same tasks also run once immediately on server startup.
 # NOTE: ICON-D2 runs are every 3 hours starting at 00:00, but it takes some time until they are available
 auto_build_time = ["00:30", "07:30", "16:30"]
+
+# If True, a maintenance run (purge + auto-build) is performed immediately on startup.
+run_maintenance_on_startup = True
 
 # When True, no new tiles are fetched or generated and no old tiles are purged.
 # Only tiles that already exist on disk will be served.

@@ -347,9 +347,10 @@ def _run_maintenance(name=None):
 
 
 def scheduler_loop():
-    """Runs _run_maintenance on startup and at each configured auto_build_time."""
+    """Runs _run_maintenance on startup (if configured) and at each configured auto_build_time."""
     global next_maintenance
-    _run_maintenance(name="Startup")
+    if config.run_maintenance_on_startup:
+        _run_maintenance(name="Startup")
 
     while True:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
