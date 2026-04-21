@@ -352,12 +352,13 @@ function statusBadge(status) {
     }
     tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
-        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Size</th></tr></thead>
+        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Proc.</th><th class="text-end">Size</th></tr></thead>
         <tbody>
           ${items.map(it => `<tr>
             <td class="text-nowrap">${fmtId(it.id)}</td>
             <td><code>${it.folder}</code></td>
             <td>${statusBadge(it.status)}</td>
+            <td class="text-end text-nowrap">${it.processing_time != null ? it.processing_time.toFixed(1) + 's' : '—'}</td>
             <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
           </tr>`).join('')}
         </tbody>

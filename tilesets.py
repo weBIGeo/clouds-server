@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
+import json
 import os
 import re
 import shutil
@@ -28,6 +29,36 @@ import db
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("tilesets")
+
+
+def parse_log_timings(log_path: str) -> tuple[dict, float] | tuple[None, None]:
+    """Parse step timings from a worker latest.log.
+
+    Returns (step_timings_dict, total_processing_secs) or (None, None) on failure.
+    """
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+    except OSError:
+        return None, None
+
+    matches = re.findall(r"(\w[\w ]+?) completed in ([\d.]+)s", text)
+    if not matches:
+        return None, None
+
+    timings: dict[str, float] = {}
+    for name, secs in matches:
+        timings[name.lower().replace(" ", "_")] = float(secs)
+
+    return timings, round(sum(timings.values()), 2)
+
+
+def _apply_log_timings(folder: str, folder_path: str) -> None:
+    log_path = os.path.join(folder_path, "latest.log")
+    timings, proc_time = parse_log_timings(log_path)
+    if timings is not None:
+        db.tileset_set_timings(folder, json.dumps(timings), proc_time)
+
 
 # Cache of available steps per run_str (YYYYMMDDHH) discovered from the DWD
 # listing at grib/{HH}/clc/. Each entry maps run_str -> {"steps": set(int), "ts": datetime, "status": "success" or "fail"}
@@ -241,6 +272,7 @@ def sync_from_disk() -> None:
                 # Folder is valid — server crashed after completion but before DB update
                 size = compute_folder_size(path)
                 db.tileset_set_ready(folder, size)
+                _apply_log_timings(folder, path)
                 logger.info(f"sync_from_disk: adopted completed folder {folder} ({size} bytes)")
 
         elif row["status"] == "pending":
@@ -248,6 +280,7 @@ def sync_from_disk() -> None:
                 # Folder is already valid on disk — promote to ready
                 size = compute_folder_size(path)
                 db.tileset_set_ready(folder, size)
+                _apply_log_timings(folder, path)
                 logger.info(f"sync_from_disk: promoted pending {folder} to ready ({size} bytes)")
             # pending with no folder on disk: leave as-is, workers will claim it
 
@@ -256,6 +289,8 @@ def sync_from_disk() -> None:
                 # Folder was deleted externally — remove from DB
                 db.tileset_delete(folder)
                 logger.info(f"sync_from_disk: removed DB entry for missing folder {folder}")
+            elif row.get("processing_time") is None:
+                _apply_log_timings(folder, path)
 
     # --- Adopt disk folders not known to DB ---
     for folder, entry in disk_by_folder.items():
@@ -268,6 +303,7 @@ def sync_from_disk() -> None:
             size = compute_folder_size(path)
             db.tileset_upsert(folder, run_str, entry["step"], target_str)
             db.tileset_set_ready(folder, size)
+            _apply_log_timings(folder, path)
             logger.info(f"sync_from_disk: adopted unknown folder {folder} ({size} bytes)")
         else:
             # Invalid/incomplete folder with no DB record — discard

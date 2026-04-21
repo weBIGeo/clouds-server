@@ -33,6 +33,7 @@ from tilesets import (
     get_best_run_and_step,
     get_scheme_rule,
     compute_folder_size,
+    parse_log_timings,
 )
 
 logger = logging.getLogger("scheduler")
@@ -45,10 +46,7 @@ next_maintenance: datetime | None = None
 
 def worker_output_reader(process, task_key, log_file_path):
     """Reads stdout from a worker process and updates the shared progress dict."""
-    run_start = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    with open(log_file_path, "a", encoding="utf-8") as f:
-        f.write(f"\n{'=' * 60}\nRun attempt: {run_start}\n{'=' * 60}\n")
-        f.flush()
+    with open(log_file_path, "w", encoding="utf-8") as f:
         for line in iter(process.stdout.readline, ""):
             f.write(line)
             f.flush()
@@ -152,7 +150,12 @@ def worker_loop():
                 elapsed = time.monotonic() - start_time
                 size = compute_folder_size(output_dir)
                 db.tileset_set_ready(folder_name, size)
-                logger.info(f"Done: run {run_str} +{step}h ({elapsed:.1f}s, {size / 1e6:.1f} MB)")
+                step_timings, proc_time = parse_log_timings(log_path)
+                if step_timings is not None:
+                    db.tileset_set_timings(folder_name, json.dumps(step_timings), proc_time)
+                    logger.info(f"Done: run {run_str} +{step}h ({proc_time:.1f}s / {elapsed:.1f}s, {size / 1e6:.1f} MB)")
+                else:
+                    logger.info(f"Done: run {run_str} +{step}h ({elapsed:.1f}s, {size / 1e6:.1f} MB)")
                 success = True
 
         except Exception as e:

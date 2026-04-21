@@ -79,6 +79,7 @@ def list_tilesets():
             "size": r["size"],
             "queued_at": r["queued_at"],
             "completed_at": r["completed_at"],
+            "processing_time": r["processing_time"],
         }
         for r in rows
     ]

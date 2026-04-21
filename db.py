@@ -32,13 +32,6 @@ def init(path: str = "data/clouds-server.db") -> None:
     _conn = sqlite3.connect(path, check_same_thread=False)
     _conn.row_factory = sqlite3.Row
     with _lock:
-        # Migrate old table name if present
-        try:
-            _conn.execute("ALTER TABLE tile_cache RENAME TO tilesets")
-            _conn.commit()
-        except sqlite3.OperationalError:
-            pass  # already renamed or never existed
-
         _conn.executescript("""
             CREATE TABLE IF NOT EXISTS public_log (
                 id  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,27 +51,22 @@ def init(path: str = "data/clouds-server.db") -> None:
             );
 
             CREATE TABLE IF NOT EXISTS tilesets (
-                folder         TEXT PRIMARY KEY,
-                run_str        TEXT NOT NULL,
-                step           INTEGER NOT NULL,
-                target_str     TEXT NOT NULL,
-                status         TEXT NOT NULL,
-                size           INTEGER,
-                queued_at      TEXT NOT NULL,
-                completed_at   TEXT,
-                maintenance_id INTEGER
+                folder          TEXT PRIMARY KEY,
+                run_str         TEXT NOT NULL,
+                step            INTEGER NOT NULL,
+                target_str      TEXT NOT NULL,
+                status          TEXT NOT NULL,
+                size            INTEGER,
+                queued_at       TEXT NOT NULL,
+                completed_at    TEXT,
+                maintenance_id  INTEGER,
+                step_timings    TEXT,
+                processing_time REAL
             );
             CREATE INDEX IF NOT EXISTS idx_tilesets_status ON tilesets(status);
             CREATE INDEX IF NOT EXISTS idx_tilesets_target ON tilesets(target_str);
         """)
         _conn.commit()
-
-        # Idempotent migration: add maintenance_id if missing (pre-rename databases)
-        try:
-            _conn.execute("ALTER TABLE tilesets ADD COLUMN maintenance_id INTEGER")
-            _conn.commit()
-        except sqlite3.OperationalError:
-            pass  # column already exists
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +213,16 @@ def tileset_set_status(folder: str, status: str) -> None:
         _conn.execute(
             "UPDATE tilesets SET status = ? WHERE folder = ?",
             (status, folder),
+        )
+        _conn.commit()
+
+
+def tileset_set_timings(folder: str, step_timings: str, processing_time: float) -> None:
+    """Store parsed step timings (JSON) and total processing time for a tileset."""
+    with _lock:
+        _conn.execute(
+            "UPDATE tilesets SET step_timings = ?, processing_time = ? WHERE folder = ?",
+            (step_timings, processing_time, folder),
         )
         _conn.commit()
 
