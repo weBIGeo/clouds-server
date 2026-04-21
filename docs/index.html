@@ -160,7 +160,7 @@
       "size": 123456789,
       "queued_at": "2026-04-08T09:00:00Z",
       "completed_at": "2026-04-08T09:15:42Z",
-
+      "processing_time": 88.2
     }
   ]
 }</code></pre>
@@ -176,7 +176,7 @@
               <tr><td><code>size</code></td><td>Total size in bytes (only set when <code>status=ready</code>)</td></tr>
               <tr><td><code>queued_at</code></td><td>ISO 8601 UTC timestamp when first queued</td></tr>
               <tr><td><code>completed_at</code></td><td>ISO 8601 UTC timestamp when marked ready (only set when <code>status=ready</code>)</td></tr>
-
+              <tr><td><code>processing_time</code></td><td>Sum of individual worker step durations in seconds (null if not yet parsed)</td></tr>
             </tbody>
           </table>
         </div>
