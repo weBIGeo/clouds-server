@@ -51,7 +51,7 @@ AUSTRIA_BBOX = "46.16,9.39,49.18,17.38"
 SNOWGRID_PARAMETERS = ["snow_depth", "swe_tot"]
 
 # cache for the query results per day
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "snowgrid")
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache", "snowgrid")
 
 def fetch_snowgrid(date_str: str) -> tuple[dict, bool]:
     cache_path = os.path.join(CACHE_DIR, f"{date_str}.json")

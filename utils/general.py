@@ -26,7 +26,7 @@ import sys
 # I know its weird, but its one single line of truth - and i keep forgetting to bump it.
 def read_version() -> str:
     try:
-        readme = os.path.join(os.path.dirname(__file__), "README.md")
+        readme = os.path.join(os.path.dirname(os.path.dirname(__file__)), "README.md")
         with open(readme, encoding="utf-8") as f:
             m = re.search(r"img\.shields\.io/badge/version-([^-]+)-", f.read())
             if m:
@@ -35,8 +35,6 @@ def read_version() -> str:
         pass
     return "unknown"
 
-# MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
-MAX_ALTITUDE = 14000.0  # Sensible maximum altitude
 
 # Each section's (start_offset, weight) as fractions summing to 1.0.
 _SECTION_WEIGHTS: dict[str, tuple[float, float]] = {
@@ -69,3 +67,4 @@ def report_progress(stage: str, detail: str, percent: float) -> None:
         print(f"PROGRESS::{stage}::{detail}::{overall}")
 
     sys.stdout.flush()
+

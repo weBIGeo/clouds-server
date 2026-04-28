@@ -16,8 +16,18 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
+# Maximum altitude used for cloud layer normalisation (metres).
+# MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
+max_altitude = 14000.0  # Sensible maximum altitude
+
+# Path to the SQLite database file.
+db_path = "data/clouds-server.db"
+
 # Directory where generated tile sets are stored.
-output_dir = "tiles_output"
+tileset_cache_dir = "data/tileset_cache"
+
+# Maximum total size of the tileset cache directory. Processing is skipped when exceeded.
+tilesets_max_size = 100 * 1024 * 1024 * 1024  # 100 GiB
 
 # Host and port the server listens on.
 # Use "0.0.0.0" to accept connections from any network interface.
@@ -31,9 +41,9 @@ log_level = "DEBUG"
 # NOTE: Logs for the tile creation progress are stored in the respective tile folders. The following values
 # only affect the server's own console log output.
 # Log file path. Set to empty string to disable file logging.
-log_file = "latest.log"
+log_file = "data/latest.log"
 # Log file rotation: maximum size per file in bytes and number of backup files to keep.
-log_file_max_bytes = 5 * 1024 * 1024  # 5 MB
+log_file_max_bytes = 5 * 1024 * 1024  # 5 MiB
 log_file_backup_count = 3
 
 # Per-logger level overrides. Use this to silence noisy third-party libraries
@@ -90,9 +100,11 @@ tile_retention_policy = [
 ]
 
 # UTC times (HH:MM) at which the auto-build and archive tasks run.
-# The same tasks also run once immediately on server startup.
 # NOTE: ICON-D2 runs are every 3 hours starting at 00:00, but it takes some time until they are available
 auto_build_time = ["00:30", "07:30", "16:30"]
+
+# If True, a maintenance run (purge + auto-build) is performed immediately on startup.
+run_maintenance_on_startup = True
 
 # When True, no new tiles are fetched or generated and no old tiles are purged.
 # Only tiles that already exist on disk will be served.

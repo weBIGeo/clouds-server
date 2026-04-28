@@ -27,10 +27,10 @@ import argparse
 import traceback
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
-from bc4 import BC4Compressor
-from io_ktx import Ktx2
+from utils.bc4 import BC4Compressor
+from utils.io_ktx import Ktx2
 from numba import jit
-from util import report_progress
+from utils.general import report_progress
 
 logger = logging.getLogger("lod")
 
