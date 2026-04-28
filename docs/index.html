@@ -5,6 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>weBIGeo Cloud Server</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><text y='25' font-size='27'>☁️</text></svg>">
   <script>
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     document.documentElement.setAttribute('data-bs-theme', mq.matches ? 'dark' : 'light');
@@ -50,14 +52,102 @@
     }
 
     .status-card {
-      border: 1px solid #2a2a2a;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(0, 0, 0, 0.2);
       border-radius: .5rem;
+    }
+
+    .route-alias {
+      font-size: .8em;
+    }
+
+    .main-container {
+      max-width: 1000px;
+      min-height: 100vh;
+      background: rgba(0, 0, 0, 0.2);
+      border-left: 1px solid rgba(255, 255, 255, 0.4);
+      border-right: 1px solid rgba(255, 255, 255, 0.4);
+    }
+
+    @media (min-width: 1000px) {
+      .main-container {
+        padding-left: 50px;
+        padding-right: 50px;
+      }
+    }
+
+    @keyframes clouds-scroll-1000 {
+      to {
+        transform: translateX(-1000px);
+      }
+    }
+
+    @keyframes clouds-scroll-1579 {
+      to {
+        transform: translateX(-1579px);
+      }
+    }
+
+    .clouds {
+      opacity: 0.35;
+      pointer-events: none;
+      position: fixed;
+      overflow: hidden;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -1;
+    }
+
+    .clouds-1,
+    .clouds-2,
+    .clouds-3 {
+      animation-play-state: paused;
+    }
+
+    .clouds.running .clouds-1,
+    .clouds.running .clouds-2,
+    .clouds.running .clouds-3 {
+      animation-play-state: running;
+    }
+
+    .clouds-1,
+    .clouds-2,
+    .clouds-3 {
+      background-repeat: repeat-x;
+      position: absolute;
+      top: 0;
+      left: -1579px;
+      right: -1579px;
+      height: 500px;
+    }
+
+    .clouds-1 {
+      background-image: url(https://s.cdpn.io/15514/clouds_2.png);
+      animation: clouds-scroll-1000 20s infinite linear paused;
+    }
+
+    .clouds-2 {
+      background-image: url(https://s.cdpn.io/15514/clouds_1.png);
+      animation: clouds-scroll-1000 15s infinite linear paused;
+    }
+
+    .clouds-3 {
+      background-image: url(https://s.cdpn.io/15514/clouds_3.png);
+      animation: clouds-scroll-1579 17s infinite linear paused;
     }
   </style>
 </head>
 
 <body>
-  <div class="container py-4" style="max-width:860px">
+  <!-- https://codepen.io/vavik96/pen/vEdMXM  -->
+  <div class="clouds" aria-hidden="true">
+    <div class="clouds-1"></div>
+    <div class="clouds-2"></div>
+    <div class="clouds-3"></div>
+  </div>
+  <div class="container py-4 main-container">
 
     <!-- === HEADER === -->
     <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
@@ -147,7 +237,8 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-            <code>/status</code>
+            <code>/v2/status</code>
+            <code class="text-secondary route-alias">· /status</code>
           </div>
           <div class="card-body">
             <p class="text-secondary small">Returns the current server status: what is actively being processed right
@@ -185,7 +276,8 @@
                 <tr>
                   <td><code>active</code></td>
                   <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with live <code>stage</code>,
-                    <code>detail</code>, and <code>percent</code> (0–100)</td>
+                    <code>detail</code>, and <code>percent</code> (0–100)
+                  </td>
                 </tr>
                 <tr>
                   <td><code>tilesets.size</code></td>
@@ -203,7 +295,8 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-            <code>/tilesets</code>
+            <code>/v2/tilesets</code>
+            <code class="text-secondary route-alias">· /tilesets</code>
           </div>
           <div class="card-body">
             <p class="text-secondary small">Returns all known tile sets from the database, optionally filtered by
@@ -222,7 +315,8 @@
                   <td><code>status</code></td>
                   <td><em>all</em></td>
                   <td>Filter by status: <code>ready</code>, <code>pending</code>, <code>fetching</code>, or
-                    <code>failed</code></td>
+                    <code>failed</code>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -284,7 +378,8 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-            <code>/log</code>
+            <code>/v2/log</code>
+            <code class="text-secondary route-alias">· /log</code>
           </div>
           <div class="card-body">
             <p class="text-secondary small">Returns the public event log. Entries are returned oldest-first.</p>
@@ -318,40 +413,25 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-            <code>/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
+            <code>/v2/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
+            <code class="text-secondary route-alias">· /{folder}/tiles/{z}/{x}/{y}.ktx2</code>
           </div>
           <div class="card-body">
             <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
               of the <code>path</code> field returned by <code>/tilesets</code> (e.g. <code>2026040809_003</code>). The
-              <code>tiles</code> sub-path is fixed.</p>
+              <code>tiles</code> sub-path is fixed.
+            </p>
           </div>
         </div>
 
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-            <code>/{folder}/shadow.ktx2</code>
+            <code>/v2/{folder}/shadow.ktx2</code>
+            <code class="text-secondary route-alias">· /{folder}/shadow.ktx2</code>
           </div>
           <div class="card-body">
             <p class="text-secondary small mb-0">Serves the shadow map for the given tile set.</p>
-          </div>
-        </div>
-
-        <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
-
-        <!-- v2 aliases -->
-        <div class="border rounded p-3 mb-3 mt-4">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <span class="badge text-bg-secondary">v2</span>
-            <span class="small fw-semibold">Version aliases</span>
-          </div>
-          <p class="text-secondary small mb-2">All endpoints above are also reachable under the <code>/v2/</code> prefix and behave identically.</p>
-          <div class="font-monospace small text-secondary">
-            GET /v2/status<br>
-            GET /v2/tilesets<br>
-            GET /v2/log<br>
-            GET /v2/{folder}/tiles/{z}/{x}/{y}.ktx2<br>
-            GET /v2/{folder}/shadow.ktx2
           </div>
         </div>
 
@@ -360,7 +440,7 @@
           <div class="d-flex align-items-center gap-2 mb-2">
             <span class="badge text-bg-warning text-dark">v1</span>
             <span class="small fw-semibold">Deprecated endpoints</span>
-            <span class="small text-secondary ms-1">— supported for backwards compatibility only</span>
+            <span class="small text-secondary ms-1">- supported for backwards compatibility only</span>
           </div>
           <div class="font-monospace small text-secondary">
             GET /v1/status<br>
@@ -370,6 +450,8 @@
             GET /v1/{folder}/shadow.ktx2
           </div>
         </div>
+
+        <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
       </div>
 
     </div>
@@ -425,9 +507,12 @@
 
     setInterval(updateCountdown, 1000);
 
+    const cloudsEl = document.querySelector('.clouds');
+
     function applyStatus(data) {
       dot.className = 'status-dot ' + data.status;
       label.textContent = data.status;
+      cloudsEl.classList.toggle('running', data.status === 'working');
 
       nextMaintenanceTime = data.next_maintenance ? new Date(data.next_maintenance).getTime() : null;
       updateCountdown();
