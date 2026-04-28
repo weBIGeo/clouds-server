@@ -123,7 +123,7 @@ def serve_tiles(filename):
 if __name__ == "__main__":
     log_config.setup_logging(log_file=config.log_file)
     log_config.print_logo()
-    db.init()
+    db.init(config.db_path)
     db.log_append(f"Server started v{VERSION}")
     msg = f" === weBIGeo Cloud Server v{VERSION} started === "
     sep = " " + "=" * (len(msg) - 2) + " "

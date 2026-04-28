@@ -20,6 +20,9 @@
 # MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
 max_altitude = 14000.0  # Sensible maximum altitude
 
+# Path to the SQLite database file.
+db_path = "data/clouds-server.db"
+
 # Directory where generated tile sets are stored.
 tileset_cache_dir = "data/tileset_cache"
 
