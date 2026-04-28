@@ -28,8 +28,9 @@ import traceback
 import gc
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
-from icon_loader import DataCube
-from util import report_progress, MAX_ALTITUDE
+from .icon_loader import DataCube
+import config as _server_config
+from utils.general import report_progress
 from scipy.ndimage import gaussian_filter1d
 
 logger = logging.getLogger("tiles")
@@ -362,7 +363,7 @@ class UniformParameterCalculator:
         """Calculate uniform parameters for a tile batch."""
         tile_bounds = mercantile.xy_bounds(mercantile.Tile(batch_x, batch_y, zoom))
         resolution_h = (tile_bounds.right - tile_bounds.left) / config.tile_resolution
-        resolution_v = MAX_ALTITUDE / config.vertical_layers
+        resolution_v = _server_config.max_altitude / config.vertical_layers
 
         # Top-left corner with halo
         left = tile_bounds.left - config.halo_size * resolution_h
@@ -455,9 +456,9 @@ class TileSaver:
 class TileProcessor:
     """Main processor for generating cloud tiles from meteorological data."""
 
-    SHADER_PATH = "shaders/cloud_synthesis.wgsl"
-    # SHADER_PATH = "shaders/cloud_upscale-only.wgsl"
-    POSTPROCESS_SHADER_PATH = "shaders/postprocess.wgsl"
+    SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/cloud_synthesis.wgsl")
+    # SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/cloud_upscale-only.wgsl")
+    POSTPROCESS_SHADER_PATH = os.path.join(os.path.dirname(__file__), "shaders/postprocess.wgsl")
     WORKGROUP_SIZE = 8
 
     def __init__(self, datacube: DataCube, output_dir: str, config: TileConfig = None):
@@ -510,7 +511,7 @@ class TileProcessor:
         ]
 
     def _preprocess_cloud_data(self, datacube: DataCube):
-        from dwd_preprocess import (
+        from .dwd_preprocess import (
             clean_and_remap_clc,
             separate_cirrus_layers,
         )
@@ -626,7 +627,7 @@ class TileProcessor:
             resolution_h = (
                 tile_bounds.right - tile_bounds.left
             ) / self.config.tile_resolution
-            resolution_v = MAX_ALTITUDE / self.config.vertical_layers
+            resolution_v = _server_config.max_altitude / self.config.vertical_layers
 
             for local_x, local_y, tile in tiles:
                 # Extract tile region

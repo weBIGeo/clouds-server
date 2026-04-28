@@ -24,10 +24,11 @@ import numpy as np
 import mercantile
 from dataclasses import dataclass
 from numba import jit, prange
-from io_ktx import Ktx2
-from bc4 import BC4Compressor
+from utils.io_ktx import Ktx2
+from utils.bc4 import BC4Compressor
 from scipy.ndimage import gaussian_filter
-from util import MAX_ALTITUDE, report_progress
+import config
+from utils.general import report_progress
 
 logger = logging.getLogger("shadows")
 
@@ -249,7 +250,7 @@ class ShadowMapGenerator:
         logger.debug(
             f"Shadow map bounding box (EPSG:3857): "
             f"min=({bbox_min_x:.8f}, {bbox_min_y:.8f}, 0.0) "
-            f"max=({bbox_max_x:.8f}, {bbox_max_y:.8f}, {MAX_ALTITUDE:.1f})"
+            f"max=({bbox_max_x:.8f}, {bbox_max_y:.8f}, {config.max_altitude:.1f})"
         )
 
         Ktx2.save(

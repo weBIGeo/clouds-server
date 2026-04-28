@@ -17,19 +17,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 from math import floor
-import json
 import os
 import re
 import sys
-import threading
-from datetime import datetime, timezone
 
 
 # NOTE: The version is intentionally kept only in README.md. This function extracts it.
 # I know its weird, but its one single line of truth - and i keep forgetting to bump it.
 def read_version() -> str:
     try:
-        readme = os.path.join(os.path.dirname(__file__), "README.md")
+        readme = os.path.join(os.path.dirname(os.path.dirname(__file__)), "README.md")
         with open(readme, encoding="utf-8") as f:
             m = re.search(r"img\.shields\.io/badge/version-([^-]+)-", f.read())
             if m:
@@ -38,8 +35,6 @@ def read_version() -> str:
         pass
     return "unknown"
 
-# MAX_ALTITUDE = 22500.0  # DWD ICON-D2 maximum altitude
-MAX_ALTITUDE = 14000.0  # Sensible maximum altitude
 
 # Each section's (start_offset, weight) as fractions summing to 1.0.
 _SECTION_WEIGHTS: dict[str, tuple[float, float]] = {
@@ -73,45 +68,3 @@ def report_progress(stage: str, detail: str, percent: float) -> None:
 
     sys.stdout.flush()
 
-
-class PublicLog:
-    """Append-only public event log stored as JSONL (public-log.json).
-
-    Each entry is a JSON object on its own line:
-      {"dt": "2026-04-15T12:00:00Z", "msg": "..."}
-    """
-
-    def __init__(self, path: str = "public-log.json"):
-        self._path = path
-        self._lock = threading.Lock()
-
-    def append(self, message: str) -> None:
-        """Append a new entry with the current UTC time."""
-        entry = {
-            "dt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "msg": message,
-        }
-        with self._lock:
-            with open(self._path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry) + "\n")
-
-    def read_since(self, seconds: int) -> list[dict]:
-        """Return all entries from the last *seconds* seconds, oldest first."""
-        if not os.path.exists(self._path):
-            return []
-        cutoff = datetime.now(timezone.utc).timestamp() - seconds
-        results = []
-        with self._lock:
-            with open(self._path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        entry = json.loads(line)
-                        dt = datetime.strptime(entry["dt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                        if dt.timestamp() >= cutoff:
-                            results.append(entry)
-                    except (json.JSONDecodeError, KeyError, ValueError):
-                        continue
-        return results

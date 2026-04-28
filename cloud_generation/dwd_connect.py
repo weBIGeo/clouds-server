@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 import config as server_config
-from util import report_progress
+from utils.general import report_progress
 
 logger = logging.getLogger("dwd")
 

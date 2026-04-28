@@ -1,274 +1,417 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>weBIGeo Cloud Server</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <script>
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    document.documentElement.setAttribute('data-bs-theme', mq.matches ? 'dark' : 'light');
+    mq.addEventListener('change', e => document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light'));
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/flatly/bootstrap.min.css">
   <style>
     .status-dot {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-      display: inline-block; background: #6c757d;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-block;
+      background: #6c757d;
     }
-    .status-dot.idle    { background: #3fb950; }
-    .status-dot.working { background: #f0883e; animation: pulse 1s ease-in-out infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-    .log-msg { white-space: pre-wrap; word-break: break-word; }
+
+    .status-dot.idle {
+      background: #3fb950;
+      box-shadow: 0 0 6px #3fb950;
+    }
+
+    .status-dot.working {
+      background: #f0883e;
+      box-shadow: 0 0 6px #f0883e;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .35
+      }
+    }
+
+    .log-msg {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .status-card {
+      border: 1px solid #2a2a2a;
+      border-radius: .5rem;
+    }
   </style>
 </head>
+
 <body>
-<div class="container py-4" style="max-width:860px">
+  <div class="container py-4" style="max-width:860px">
 
-  <!-- === HEADER === -->
-  <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
-    <span style="font-size:1.8rem">☁️</span>
-    <h1 class="fs-4 fw-semibold mb-0">weBIGeo Cloud Server</h1>
-    <span class="badge rounded-pill text-bg-primary ms-1" id="version-badge">…</span>
-  </div>
+    <!-- === HEADER === -->
+    <div class="d-flex align-items-center gap-2 mb-4 pb-3 border-bottom">
+      <span style="font-size:1.8rem">☁️</span>
+      <h1 class="fs-4 fw-semibold mb-0">weBIGeo Cloud Server</h1>
+      <span class="badge rounded-pill text-bg-primary ms-1" id="version-badge">…</span>
+    </div>
 
-  <!-- === STATUS === -->
-  <div class="d-flex align-items-center gap-2 mb-3">
-    <div class="w-100">
-      <div class="d-flex align-items-center gap-2">
-      <span class="status-dot" id="status-dot"></span>
-      <span class="fw-semibold text-capitalize large" id="status-label">connecting…</span>
+    <!-- === STATUS === -->
+    <div class="status-card px-4 py-3 mb-4">
+      <div class="d-flex align-items-center gap-3">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="fs-5 fw-semibold text-capitalize" id="status-label">connecting…</span>
       </div>
       <div class="small text-secondary mt-2" id="status-maintenance"></div>
     </div>
-  </div>
 
-  <!-- === ACTIVE TASKS === -->
-  <div id="active-tasks-section" style="display:none" class="mb-4">
-    <div class="text-uppercase small fw-semibold text-secondary mb-2">Active Tasks</div>
-    <div id="active-list" class="d-flex flex-column gap-2 mb-2"></div>
-    <div id="queued-section" style="display:none">
-      <div class="text-uppercase small fw-semibold text-secondary mt-2 mb-1">Queued</div>
-      <div id="queued-list" class="d-flex flex-wrap gap-1"></div>
-    </div>
-  </div>
-
-  <ul class="nav nav-tabs mb-3" role="tablist">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-about" role="tab">About</button></li>
-    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-cache" role="tab">Tile Cache</button></li>
-    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-log"   role="tab">Event Log</button></li>
-    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tab-api"   role="tab">API</button></li>
-  </ul>
-
-  <div class="tab-content">
-
-    <!-- === ABOUT === -->
-    <div class="tab-pane fade show active" id="tab-about" role="tabpanel">
-      <p class="text-secondary">Preprocessing server for real-time volumetric cloud rendering in the browser.
-        Originally developed by <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.</p>
-      <blockquote class="border-start border-secondary ps-3 text-secondary small my-3">
-        <a href="https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/">Real-Time Volumetric Rendering
-          of Meteorological Cloud Data</a><br>
-        Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026<br>
-        Supervisor: Manuela Waldner
-      </blockquote>
-      <p class="text-secondary">Built for the <a href="https://github.com/weBIGeo/webigeo">weBIGeo</a> web-based
-        geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into
-        compressed tile hierarchies, and serves them for WebGPU-based ray-marching cloud rendering.</p>
-      <p class="text-secondary">The original codebase can be found
-        <a href="https://github.com/Qendolin/webigeo-clouds-server">here</a>. This server runs a production-ready
-        <a href="https://github.com/weBIGeo/clouds-server">variant</a> with customizable tile creation and purging
-        strategies developed by <strong>Gerald Kimmersdorfer</strong>.
-        You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
-      </p>
+    <!-- === ACTIVE TASKS === -->
+    <div id="active-tasks-section" style="display:none" class="mb-4">
+      <div class="text-uppercase small fw-semibold text-secondary mb-2">Active Tasks</div>
+      <div id="active-list" class="d-flex flex-column gap-2 mb-2"></div>
     </div>
 
-    <!-- === TILE CACHE === -->
-    <div class="tab-pane fade" id="tab-cache" role="tabpanel">
-      <div class="d-flex justify-content-between small text-secondary mb-1 mt-1">
-        <span>Tile Cache</span>
-        <span id="cache-size-label">…</span>
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-about"
+          role="tab">About</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cache" role="tab">Tile
+          Cache</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-log" role="tab">Event
+          Log</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-api"
+          role="tab">API</button></li>
+    </ul>
+
+    <div class="tab-content">
+
+      <!-- === ABOUT === -->
+      <div class="tab-pane fade show active" id="tab-about" role="tabpanel">
+        <p class="text-secondary">Preprocessing server for real-time volumetric cloud rendering in the browser.
+          Originally developed by <strong>Wendelin Muth</strong> as part of his bachelor thesis at TU Wien.</p>
+        <blockquote class="border-start border-secondary ps-3 text-secondary small my-3">
+          <a href="https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/">Real-Time Volumetric
+            Rendering
+            of Meteorological Cloud Data</a><br>
+          Wendelin Muth, Research Unit of Computer Graphics, TU Wien, March 2026<br>
+          Supervisor: Manuela Waldner
+        </blockquote>
+        <p class="text-secondary">Built for the <a href="https://github.com/weBIGeo/webigeo">weBIGeo</a> web-based
+          geographic visualization project. It fetches weather forecast data from DWD (ICON-D2 model), processes it into
+          compressed tile hierarchies, and serves them for WebGPU-based ray-marching cloud rendering.</p>
+        <p class="text-secondary">The original codebase can be found
+          <a href="https://github.com/Qendolin/webigeo-clouds-server">here</a>. This server runs a production-ready
+          <a href="https://github.com/weBIGeo/clouds-server">variant</a> with customizable tile creation and purging
+          strategies developed by <strong>Gerald Kimmersdorfer</strong>.
+          You can see weBIGeo in action at <a href="https://webigeo.alpinemaps.org/">webigeo.alpinemaps.org</a>.
+        </p>
       </div>
-      <div class="progress mb-2" style="height:6px">
-        <div class="progress-bar" id="cache-progress-bar" style="width:0%"></div>
-      </div>
-      <button class="btn btn-outline-secondary w-100 mb-3" id="available-refresh-btn">Load/Refresh Available Tile Sets</button>
-      <div id="available-entries"></div>
-    </div>
 
-    <!-- === EVENT LOG === -->
-    <div class="tab-pane fade" id="tab-log" role="tabpanel">
-      <button class="btn btn-outline-secondary w-100 mt-3" id="log-refresh-btn">Refresh Event Log</button>
-      <div id="log-entries">
-        <div class="text-secondary small py-2">No entries.</div>
-      </div>
-    </div>
-
-    <!-- === API === -->
-    <div class="tab-pane fade" id="tab-api" role="tabpanel">
-      <p class="text-secondary small mb-3">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
-
-      <div class="card mb-3">
-        <div class="card-header d-flex align-items-center gap-2">
-          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/status</code>
+      <!-- === TILE CACHE === -->
+      <div class="tab-pane fade" id="tab-cache" role="tabpanel">
+        <div class="d-flex justify-content-between small text-secondary mb-1 mt-1">
+          <span>Tile Cache</span>
+          <span id="cache-size-label">…</span>
         </div>
-        <div class="card-body">
-          <p class="text-secondary small">Returns the current server status: what is actively being processed, what is
-            queued, and when the next scheduled maintenance run is.</p>
-          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
-          <pre class="border rounded p-3 small mb-3"><code>{
-  "version": "1.2",
+        <div class="progress mb-3">
+          <div class="progress-bar progress-bar-striped bg-info" id="cache-progress-bar" style="width:0%"></div>
+          <!-- classes managed by JS -->
+        </div>
+        <button class="btn btn-outline-secondary w-100 mb-2" id="tiles-refresh-btn">Refresh Tile Information</button>
+        <div id="tile-entries">
+          <div class="text-secondary small py-2">Click the button above to load tile set information.</div>
+        </div>
+      </div>
+
+      <!-- === EVENT LOG === -->
+      <div class="tab-pane fade" id="tab-log" role="tabpanel">
+        <button class="btn btn-outline-secondary w-100 mt-3 mb-2" id="log-refresh-btn">Refresh Event Log</button>
+        <div id="log-entries">
+          <div class="text-secondary small py-2">Click the button above to load log entries.</div>
+        </div>
+      </div>
+
+      <!-- === API === -->
+      <div class="tab-pane fade" id="tab-api" role="tabpanel">
+        <p class="text-secondary small mb-3">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
+
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/status</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">Returns the current server status: what is actively being processed right
+              now and when the next scheduled maintenance run is.</p>
+            <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+            <pre class="border rounded p-3 small mb-3"><code>{
+  "version": "1.4",
   "status": "working",
   "next_maintenance": "2026-04-12T00:30:00Z",
   "active": {
-    "2026041312_001": { "status": "pending", "stage": "download", "detail": "133/522 files", "percent": 25 }
+    "2026041312_001": { "stage": "download", "detail": "133/522 files", "percent": 25 }
   },
-  "queued": ["2026041300_006", "2026041306_000"]
+  "tilesets": { "size": 4831838208, "max": 10737418240 }
 }</code></pre>
-          <table class="table table-sm small mb-0">
-            <thead><tr><th>Field</th><th>Description</th></tr></thead>
-            <tbody>
-              <tr><td><code>version</code></td><td>Server version string</td></tr>
-              <tr><td><code>status</code></td><td><code>"idle"</code> or <code>"working"</code></td></tr>
-              <tr><td><code>next_maintenance</code></td><td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td></tr>
-              <tr><td><code>active</code></td><td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with <code>stage</code>, <code>detail</code>, and <code>percent</code> (0–100)</td></tr>
-              <tr><td><code>queued</code></td><td>Folder names waiting in the queue, sorted ascending</td></tr>
-            </tbody>
-          </table>
+            <table class="table table-sm small mb-0">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>version</code></td>
+                  <td>Server version string</td>
+                </tr>
+                <tr>
+                  <td><code>status</code></td>
+                  <td><code>"idle"</code> or <code>"working"</code> (based on actively running tasks)</td>
+                </tr>
+                <tr>
+                  <td><code>next_maintenance</code></td>
+                  <td>ISO 8601 UTC datetime of the next scheduled purge + auto-build run</td>
+                </tr>
+                <tr>
+                  <td><code>active</code></td>
+                  <td>Object keyed by folder name (<code>YYYYMMDDHH_SSS</code>) with live <code>stage</code>,
+                    <code>detail</code>, and <code>percent</code> (0–100)</td>
+                </tr>
+                <tr>
+                  <td><code>tilesets.size</code></td>
+                  <td>Total bytes used by ready tile sets</td>
+                </tr>
+                <tr>
+                  <td><code>tilesets.max</code></td>
+                  <td>Configured cache size limit in bytes</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      <div class="card mb-3">
-        <div class="card-header d-flex align-items-center gap-2">
-          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/available</code>
-        </div>
-        <div class="card-body">
-          <p class="text-secondary small">Returns all ready tile sets currently on disk, sorted by time.</p>
-          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
-          <pre class="border rounded p-3 small mb-3"><code>{
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/tilesets</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">Returns all known tile sets from the database, optionally filtered by
+              status. Sorted by target time ascending.</p>
+            <p class="text-uppercase small fw-semibold text-secondary mb-1">Query Parameters</p>
+            <table class="table table-sm small mb-3">
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Default</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>status</code></td>
+                  <td><em>all</em></td>
+                  <td>Filter by status: <code>ready</code>, <code>pending</code>, <code>fetching</code>, or
+                    <code>failed</code></td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+            <pre class="border rounded p-3 small mb-3"><code>{
   "items": [
-    { "id": "2026040812", "status": "ready", "run": "2026040809", "step": 3, "path": "/2026040809_003/" }
+    {
+      "id": "2026040812",
+      "folder": "2026040809_003",
+      "status": "ready",
+      "size": 123456789,
+      "queued_at": "2026-04-08T09:00:00Z",
+      "completed_at": "2026-04-08T09:15:42Z",
+      "processing_time": 88.2
+    }
   ]
 }</code></pre>
-          <table class="table table-sm small mb-0">
-            <thead><tr><th>Field</th><th>Description</th></tr></thead>
-            <tbody>
-              <tr><td><code>id</code></td><td>Target hour (<code>YYYYMMDDHH</code>)</td></tr>
-              <tr><td><code>status</code></td><td>Always <code>"ready"</code></td></tr>
-              <tr><td><code>run</code></td><td>Model run used (<code>YYYYMMDDHH</code>)</td></tr>
-              <tr><td><code>step</code></td><td>Forecast step (hours from run to target)</td></tr>
-              <tr><td><code>path</code></td><td>URL prefix for tile and shadow files</td></tr>
-            </tbody>
-          </table>
+            <table class="table table-sm small mb-0">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>id</code></td>
+                  <td>Target hour (<code>YYYYMMDDHH</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>folder</code></td>
+                  <td>Folder name on disk (<code>YYYYMMDDHH_SSS</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>status</code></td>
+                  <td><code>ready</code> | <code>pending</code> | <code>fetching</code> | <code>failed</code></td>
+                </tr>
+                <tr>
+                  <td><code>size</code></td>
+                  <td>Total size in bytes (only set when <code>status=ready</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>queued_at</code></td>
+                  <td>ISO 8601 UTC timestamp when first queued</td>
+                </tr>
+                <tr>
+                  <td><code>completed_at</code></td>
+                  <td>ISO 8601 UTC timestamp when marked ready (only set when <code>status=ready</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>processing_time</code></td>
+                  <td>Sum of individual worker step durations in seconds (null if not yet parsed)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      <div class="card mb-3">
-        <div class="card-header d-flex align-items-center gap-2">
-          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/log</code>
-        </div>
-        <div class="card-body">
-          <p class="text-secondary small">Returns the public event log. Entries are returned oldest-first.</p>
-          <p class="text-uppercase small fw-semibold text-secondary mb-1">Query Parameters</p>
-          <table class="table table-sm small mb-3">
-            <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
-            <tbody>
-              <tr><td><code>since</code></td><td><code>604800</code></td><td>How far back to look, in seconds (default: 7 days)</td></tr>
-            </tbody>
-          </table>
-          <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
-          <pre class="border rounded p-3 small mb-0"><code>{
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/log</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">Returns the public event log. Entries are returned oldest-first.</p>
+            <p class="text-uppercase small fw-semibold text-secondary mb-1">Query Parameters</p>
+            <table class="table table-sm small mb-3">
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Default</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>since</code></td>
+                  <td><code>604800</code></td>
+                  <td>How far back to look, in seconds (default: 7 days)</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="text-uppercase small fw-semibold text-secondary mb-1">Response</p>
+            <pre class="border rounded p-3 small mb-0"><code>{
   "entries": [
-    { "dt": "2026-04-15T00:30:00Z", "msg": "Server started v1.3" },
+    { "dt": "2026-04-15T00:30:00Z", "msg": "Server started v1.4" },
     { "dt": "2026-04-15T01:15:42Z", "msg": "Maintenance completed in 2.4min:\n - 3 added (...)" }
   ]
 }</code></pre>
+          </div>
         </div>
+
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
+              of the <code>path</code> field returned by <code>/tilesets</code> (e.g. <code>2026040809_003</code>). The
+              <code>tiles</code> sub-path is fixed.</p>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/{folder}/shadow.ktx2</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-0">Serves the shadow map for the given tile set.</p>
+          </div>
+        </div>
+
+        <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
       </div>
 
-      <div class="card mb-3">
-        <div class="card-header d-flex align-items-center gap-2">
-          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
-        </div>
-        <div class="card-body">
-          <p class="text-secondary small mb-0">Serves a cloud tile in KTX2 format. <code>{folder}</code> is the value
-            of the <code>path</code> field returned by <code>/available</code> (e.g. <code>2026040809_003</code>).</p>
-        </div>
-      </div>
-
-      <div class="card mb-3">
-        <div class="card-header d-flex align-items-center gap-2">
-          <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
-          <code>/{folder}/shadow.ktx2</code>
-        </div>
-        <div class="card-body">
-          <p class="text-secondary small mb-0">Serves the shadow map for the given tile set.</p>
-        </div>
-      </div>
-
-      <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
     </div>
-
   </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-  const versionBadge       = document.getElementById('version-badge');
-  const dot                = document.getElementById('status-dot');
-  const label              = document.getElementById('status-label');
-  const maintenanceEl      = document.getElementById('status-maintenance');
-  const cacheSizeLabel     = document.getElementById('cache-size-label');
-  const cacheProgressBar   = document.getElementById('cache-progress-bar');
-  const activeTasksSection = document.getElementById('active-tasks-section');
-  const activeList         = document.getElementById('active-list');
-  const queuedSection      = document.getElementById('queued-section');
-  const queuedList         = document.getElementById('queued-list');
-  const logEntries         = document.getElementById('log-entries');
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const versionBadge = document.getElementById('version-badge');
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('status-label');
+    const maintenanceEl = document.getElementById('status-maintenance');
+    const cacheSizeLabel = document.getElementById('cache-size-label');
+    const cacheProgressBar = document.getElementById('cache-progress-bar');
+    const activeTasksSection = document.getElementById('active-tasks-section');
+    const activeList = document.getElementById('active-list');
+    const logEntries = document.getElementById('log-entries');
+    const tileEntries = document.getElementById('tile-entries');
 
-  let nextMaintenanceTime = null;
+    let nextMaintenanceTime = null;
 
-  function escapeHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  function fmtBytes(b) {
-    const GiB = 1024 ** 3, MiB = 1024 ** 2, KiB = 1024;
-    if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(1) + ' TiB';
-    if (b >= GiB)       return (b / GiB).toFixed(1) + ' GiB';
-    if (b >= MiB)       return (b / MiB).toFixed(1) + ' MiB';
-    return (b / KiB).toFixed(0) + ' KiB';
-  }
-
-  function updateCountdown() {
-    if (!nextMaintenanceTime) { maintenanceEl.textContent = ''; return; }
-    const diffSec = Math.max(0, (nextMaintenanceTime - Date.now()) / 1000);
-    const h = Math.floor(diffSec / 3600);
-    const m = Math.floor((diffSec % 3600) / 60);
-    const utc = new Date(nextMaintenanceTime);
-    const utcStr = String(utc.getUTCHours()).padStart(2,'0') + ':' + String(utc.getUTCMinutes()).padStart(2,'0') + ' UTC';
-    maintenanceEl.textContent = `Next maintenance in ${h}:${String(m).padStart(2,'0')} h (${utcStr})`;
-  }
-
-  setInterval(updateCountdown, 1000);
-
-  function applyStatus(data) {
-    dot.className     = 'status-dot ' + data.status;
-    label.textContent = data.status;
-
-    nextMaintenanceTime = data.next_maintenance ? new Date(data.next_maintenance).getTime() : null;
-    updateCountdown();
-
-    const tc = data.tile_cache;
-    if (tc) {
-      const pct = Math.min(100, (tc.size / tc.max) * 100);
-      cacheProgressBar.style.width = pct + '%';
-      cacheProgressBar.className = 'progress-bar' + (pct >= 90 ? ' bg-danger' : pct >= 70 ? ' bg-warning' : '');
-      cacheSizeLabel.textContent = fmtBytes(tc.size) + ' / ' + fmtBytes(tc.max);
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    const activeEntries = Object.entries(data.active || {});
-    if (activeEntries.length) {
-      activeEntries.sort((a,b) => a[0].localeCompare(b[0]));
-      activeList.innerHTML = activeEntries.map(([folder, p]) => `
+    function fmtBytes(b) {
+      if (b == null) return '—';
+      const GiB = 1024 ** 3, MiB = 1024 ** 2, KiB = 1024;
+      if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(1) + ' TiB';
+      if (b >= GiB) return (b / GiB).toFixed(1) + ' GiB';
+      if (b >= MiB) return (b / MiB).toFixed(1) + ' MiB';
+      return (b / KiB).toFixed(0) + ' KiB';
+    }
+
+    function fmtId(id) {
+      const y = id.slice(0, 4), mo = id.slice(4, 6), d = id.slice(6, 8), h = id.slice(8, 10);
+      return `${d}.${mo}.${y} ${h}:00`;
+    }
+
+    function statusBadge(status) {
+      const map = { ready: 'success', pending: 'secondary', fetching: 'warning', failed: 'danger' };
+      return `<span class="badge text-bg-${map[status] || 'secondary'}">${status}</span>`;
+    }
+
+    function updateCountdown() {
+      if (!nextMaintenanceTime) { maintenanceEl.textContent = ''; return; }
+      const diffSec = Math.max(0, (nextMaintenanceTime - Date.now()) / 1000);
+      const h = Math.floor(diffSec / 3600);
+      const m = Math.floor((diffSec % 3600) / 60);
+      const utc = new Date(nextMaintenanceTime);
+      const utcStr = String(utc.getUTCHours()).padStart(2, '0') + ':' + String(utc.getUTCMinutes()).padStart(2, '0') + ' UTC';
+      maintenanceEl.textContent = `Next maintenance in ${h}:${String(m).padStart(2, '0')} h (${utcStr})`;
+    }
+
+    setInterval(updateCountdown, 1000);
+
+    function applyStatus(data) {
+      dot.className = 'status-dot ' + data.status;
+      label.textContent = data.status;
+
+      nextMaintenanceTime = data.next_maintenance ? new Date(data.next_maintenance).getTime() : null;
+      updateCountdown();
+
+      const tc = data.tilesets;
+      if (tc) {
+        const pct = Math.min(100, (tc.size / tc.max) * 100);
+        cacheProgressBar.style.width = pct + '%';
+        cacheProgressBar.className = 'progress-bar progress-bar-striped' + (pct >= 100 ? ' bg-danger' : pct >= 80 ? ' bg-warning' : ' bg-info');
+        cacheSizeLabel.textContent = fmtBytes(tc.size) + ' / ' + fmtBytes(tc.max);
+      }
+
+      const activeEntries = Object.entries(data.active || {});
+      if (activeEntries.length) {
+        activeEntries.sort((a, b) => a[0].localeCompare(b[0]));
+        activeList.innerHTML = activeEntries.map(([folder, p]) => `
         <div class="border rounded p-2">
           <div class="d-flex align-items-center gap-2 mb-1">
             <code class="small">${folder}</code>
@@ -276,113 +419,119 @@
             <span class="ms-auto small">${p.percent ?? 0}%</span>
           </div>
           <div class="small text-secondary text-truncate mb-1">${escapeHtml(p.detail || '')}</div>
-          <div class="progress" style="height:4px">
-            <div class="progress-bar" style="width:${p.percent ?? 0}%"></div>
+          <div class="progress" style="height:10px">
+            <div class="progress-bar progress-bar-striped bg-info" style="width:${p.percent ?? 0}%"></div>
           </div>
         </div>`).join('');
+        activeTasksSection.style.display = 'block';
+      } else {
+        activeTasksSection.style.display = 'none';
+      }
     }
 
-    const queued = data.queued || [];
-    queuedList.innerHTML = queued.map(id => `<span class="badge text-bg-secondary font-monospace">${id}</span>`).join('');
-    queuedSection.style.display = queued.length ? 'block' : 'none';
-
-    activeTasksSection.style.display = (activeEntries.length || queued.length) ? 'block' : 'none';
-  }
-
-  function applyLog(data) {
-    const entries = data.entries || [];
-    if (!entries.length) { logEntries.innerHTML = '<div class="text-secondary small py-2">No entries.</div>'; return; }
-    logEntries.innerHTML = `
+    function applyLog(data) {
+      const entries = data.entries || [];
+      if (!entries.length) { logEntries.innerHTML = '<div class="text-secondary small py-2">No entries.</div>'; return; }
+      logEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
+        <thead><tr><th>Time (UTC)</th><th>Message</th></tr></thead>
         <tbody>
           ${[...entries].reverse().map(e => `
           <tr>
-            <td class="font-monospace text-secondary text-nowrap pe-3" style="width:1%">${e.dt.replace('T',' ').replace('Z','')}</td>
+            <td class="font-monospace text-secondary text-nowrap pe-3" style="width:1%">${e.dt.replace('T', ' ').replace('Z', '')}</td>
             <td class="log-msg">${escapeHtml(e.msg)}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
-  }
+    }
 
-  async function fetchLog() {
-    try {
-      const data = await fetch('./log?since=2592000').then(r => r.json());
-      applyLog(data);
-    } catch { }
-  }
+    async function fetchLog() {
+      try {
+        const data = await fetch('./log?since=2592000').then(r => r.json());
+        applyLog(data);
+      } catch { }
+    }
 
-  const availableEntries = document.getElementById('available-entries');
+    // --- Tile cache tab ---
 
-  function fmtId(id) {
-    // YYYYMMDDHH → DD.MM.YYYY HH:MM
-    const y = id.slice(0,4), mo = id.slice(4,6), d = id.slice(6,8), h = id.slice(8,10);
-    return `${d}.${mo}.${y} ${h}:00 UTC`;
-  }
-
-  function applyAvailable(data) {
-    const items = data.items || [];
-    if (!items.length) { availableEntries.innerHTML = '<div class="text-secondary small">No tile sets available.</div>'; return; }
-    availableEntries.innerHTML = `
+    function applyTiles(data) {
+      const items = data.items || [];
+      if (!items.length) {
+        tileEntries.innerHTML = '<div class="text-secondary small py-2">No tile sets found.</div>';
+        return;
+      }
+      tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
-        <thead><tr><th>Time</th><th>Status</th><th>Path</th></tr></thead>
+        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Proc.</th><th class="text-end">Size</th></tr></thead>
         <tbody>
-          ${items.map(it => {
-            const folder = it.path.replace(/\//g, '');
-            return `<tr>
-              <td class="text-nowrap">${fmtId(it.id)}</td>
-              <td><span class="badge text-bg-success">${it.status}</span></td>
-              <td><code>${it.path}</code></td>
-            </tr>`;
-          }).join('')}
+          ${items.map(it => `<tr>
+            <td class="text-nowrap">${fmtId(it.id)}</td>
+            <td><code>${it.folder}</code></td>
+            <td>${statusBadge(it.status)}</td>
+            <td class="text-end text-nowrap">${it.processing_time != null ? it.processing_time.toFixed(1) + 's' : '—'}</td>
+            <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
+          </tr>`).join('')}
         </tbody>
       </table>`;
-  }
-
-  async function fetchAvailable() {
-    try {
-      const data = await fetch('./available').then(r => r.json());
-      applyAvailable(data);
-    } catch { availableEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>'; }
-  }
-
-  document.getElementById('available-refresh-btn').addEventListener('click', fetchAvailable);
-  document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
-
-  let pollTimer = null;
-  function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
-
-  async function poll() {
-    let interval = 1000;
-    try {
-      const data = await fetch('./status').then(r => r.json());
-      applyStatus(data);
-      if (data.status === 'working') interval = 250;
-    } catch {
-      dot.className   = 'status-dot';
-      label.textContent = 'unreachable';
-      maintenanceEl.textContent = '';
-      activeTasksSection.style.display = 'none';
     }
-    schedulePoll(interval);
-  }
 
-  async function init() {
-    try {
-      const data = await fetch('./status').then(r => r.json());
-      if (data.version) {
-        const v = 'v' + data.version;
-        versionBadge.textContent = v;
-        document.title = 'weBIGeo Cloud Server ' + v;
+    async function fetchTiles() {
+      tileEntries.innerHTML = '<div class="text-secondary small py-2">Loading…</div>';
+      try {
+        const data = await fetch('./tilesets').then(r => r.json());
+        applyTiles(data);
+      } catch {
+        tileEntries.innerHTML = '<div class="text-secondary small">Failed to load.</div>';
       }
-      applyStatus(data);
-    } catch {
-      dot.className     = 'status-dot';
-      label.textContent = 'unreachable';
     }
-    await fetchLog();
-  }
 
-  init().then(() => schedulePoll(500));
-</script>
+    document.getElementById('tiles-refresh-btn').addEventListener('click', fetchTiles);
+    document.getElementById('log-refresh-btn').addEventListener('click', fetchLog);
+
+    let pollTimer = null;
+    function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+
+    let prevActiveKeys = new Set();
+    async function poll() {
+      let interval = 1000;
+      try {
+        const data = await fetch('./status').then(r => r.json());
+        applyStatus(data);
+        if (data.status === 'working') interval = 250;
+        const currKeys = new Set(Object.keys(data.active || {}));
+        for (const key of prevActiveKeys) {
+          if (!currKeys.has(key)) { fetchTiles(); break; }
+        }
+        prevActiveKeys = currKeys;
+      } catch {
+        dot.className = 'status-dot';
+        label.textContent = 'unreachable';
+        nextMaintenanceTime = null;
+        maintenanceEl.textContent = '';
+        activeTasksSection.style.display = 'none';
+      }
+      schedulePoll(interval);
+    }
+
+    async function init() {
+      try {
+        const data = await fetch('./status').then(r => r.json());
+        if (data.version) {
+          const v = 'v' + data.version;
+          versionBadge.textContent = v;
+          document.title = 'weBIGeo Cloud Server ' + v;
+        }
+        applyStatus(data);
+        prevActiveKeys = new Set(Object.keys(data.active || {}));
+      } catch {
+        dot.className = 'status-dot';
+        label.textContent = 'unreachable';
+      }
+      fetchTiles();
+    }
+
+    init().then(() => schedulePoll(500));
+  </script>
 </body>
+
 </html>

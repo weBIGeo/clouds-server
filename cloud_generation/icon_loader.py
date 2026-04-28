@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Import config to know max levels
-from dwd_connect import VAR_SPECS
+from .dwd_connect import VAR_SPECS
 
 logger = logging.getLogger("loader")
 
