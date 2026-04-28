@@ -17,8 +17,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
-import os
-import re
 import logging
 import threading
 import config
@@ -28,7 +26,8 @@ import db
 import scheduler
 import tilesets
 import routes_v1
-from flask import Flask, jsonify, request, send_from_directory
+import routes_v2
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from waitress import serve
 
@@ -39,6 +38,7 @@ VERSION = util.read_version()
 app = Flask(__name__)
 CORS(app)
 app.register_blueprint(routes_v1.bp)
+app.register_blueprint(routes_v2.bp)
 
 
 @app.route("/", methods=["GET"])
@@ -46,104 +46,26 @@ def index():
     return send_from_directory("docs", "index.html")
 
 
+# Unversioned aliases — delegates to routes_v2 handlers
+
 @app.route("/status", methods=["GET"])
 def server_status():
-    with scheduler.processing_lock:
-        active = {
-            f"{run_str}_{step:03d}": dict(progress)
-            for (run_str, step), progress in scheduler.task_progress.items()
-        }
-
-    return jsonify({
-        "version": VERSION,
-        "status": "working" if active else "idle",
-        "next_maintenance": scheduler.next_maintenance.strftime("%Y-%m-%dT%H:%M:00Z") if scheduler.next_maintenance else None,
-        "active": active,
-        "tilesets": {
-            "size": db.tileset_get_size(),
-            "max": config.tilesets_max_size,
-        },
-    })
+    return routes_v2.status()
 
 
 @app.route("/tilesets", methods=["GET"])
 def list_tilesets():
-    status_filter = request.args.get("status") or None
-    rows = db.tileset_get_all(status=status_filter)
-    items = [
-        {
-            "id": r["target_str"],
-            "folder": r["folder"],
-            "status": r["status"],
-            "size": r["size"],
-            "queued_at": r["queued_at"],
-            "completed_at": r["completed_at"],
-            "processing_time": r["processing_time"],
-        }
-        for r in rows
-    ]
-    items.sort(key=lambda x: x["id"])
-    return jsonify({"items": items})
+    return routes_v2.list_tilesets()
 
 
 @app.route("/log", methods=["GET"])
 def get_public_log():
-    try:
-        since = int(request.args.get("since", 7 * 24 * 3600))
-    except (ValueError, TypeError):
-        since = 7 * 24 * 3600
-    return jsonify({"entries": db.log_read_since(since)})
+    return routes_v2.get_log()
 
 
 @app.route("/<path:filename>")
 def serve_tiles(filename):
-    """
-    Handles file serving with path rewriting:
-    1. Tiles:  /{folder}/tiles/{z}/{x}/{y}.ktx2 -> /{folder}/tile_{z}_{x}_{y}.ktx2
-    2. Shadow: /{folder}/shadow.ktx2             -> /{folder}/shadow.ktx2
-    """
-    tile_match = re.match(r"^([^/]+)/tiles/(\d+)/(\d+)/(\d+)\.ktx2$", filename)
-    if tile_match:
-        folder, z, x, y = tile_match.groups()
-        real_filename = f"tile_{z}_{x}_{y}.ktx2"
-
-        # We send from the specific run_step folder
-        return send_from_directory(
-            os.path.join(os.path.abspath(config.tileset_cache_dir), folder), real_filename
-        )
-    
-    shadow_match = re.match(r"^([^/]+)/shadow\.ktx2$", filename)
-    if shadow_match:
-        folder = shadow_match.group(1)
-        return send_from_directory(
-            os.path.join(os.path.abspath(config.tileset_cache_dir), folder), "shadow.ktx2"
-        )
-
-    return ("Forbidden", 403)
-
-
-# ---------------------------------------------------------------------------
-# v2 aliases — identical behaviour to the unversioned routes above
-# ---------------------------------------------------------------------------
-
-@app.route("/v2/status")
-def server_status_v2():
-    return server_status()
-
-
-@app.route("/v2/tilesets")
-def list_tilesets_v2():
-    return list_tilesets()
-
-
-@app.route("/v2/log")
-def get_public_log_v2():
-    return get_public_log()
-
-
-@app.route("/v2/<path:filename>")
-def serve_tiles_v2(filename):
-    return serve_tiles(filename)
+    return routes_v2.serve_tiles(filename)
 
 
 if __name__ == "__main__":
