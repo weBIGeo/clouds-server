@@ -27,6 +27,7 @@ import utils.general as util
 import db
 import scheduler
 import tilesets
+import routes_v1
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from waitress import serve
@@ -37,6 +38,7 @@ VERSION = util.read_version()
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(routes_v1.bp)
 
 
 @app.route("/", methods=["GET"])
@@ -118,6 +120,30 @@ def serve_tiles(filename):
         )
 
     return ("Forbidden", 403)
+
+
+# ---------------------------------------------------------------------------
+# v2 aliases — identical behaviour to the unversioned routes above
+# ---------------------------------------------------------------------------
+
+@app.route("/v2/status")
+def server_status_v2():
+    return server_status()
+
+
+@app.route("/v2/tilesets")
+def list_tilesets_v2():
+    return list_tilesets()
+
+
+@app.route("/v2/log")
+def get_public_log_v2():
+    return get_public_log()
+
+
+@app.route("/v2/<path:filename>")
+def serve_tiles_v2(filename):
+    return serve_tiles(filename)
 
 
 if __name__ == "__main__":

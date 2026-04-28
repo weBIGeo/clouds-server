@@ -338,6 +338,38 @@
         </div>
 
         <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
+
+        <!-- v2 aliases -->
+        <div class="border rounded p-3 mb-3 mt-4">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge text-bg-secondary">v2</span>
+            <span class="small fw-semibold">Version aliases</span>
+          </div>
+          <p class="text-secondary small mb-2">All endpoints above are also reachable under the <code>/v2/</code> prefix and behave identically.</p>
+          <div class="font-monospace small text-secondary">
+            GET /v2/status<br>
+            GET /v2/tilesets<br>
+            GET /v2/log<br>
+            GET /v2/{folder}/tiles/{z}/{x}/{y}.ktx2<br>
+            GET /v2/{folder}/shadow.ktx2
+          </div>
+        </div>
+
+        <!-- v1 deprecated -->
+        <div class="border rounded p-3 mb-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge text-bg-warning text-dark">v1</span>
+            <span class="small fw-semibold">Deprecated endpoints</span>
+            <span class="small text-secondary ms-1">— supported for backwards compatibility only</span>
+          </div>
+          <div class="font-monospace small text-secondary">
+            GET /v1/status<br>
+            GET /v1/available<br>
+            GET /v1/log<br>
+            GET /v1/{folder}/tiles/{z}/{x}/{y}.ktx2<br>
+            GET /v1/{folder}/shadow.ktx2
+          </div>
+        </div>
       </div>
 
     </div>
