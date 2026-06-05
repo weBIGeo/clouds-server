@@ -326,6 +326,7 @@
     {
       "id": "2026040812",
       "folder": "2026040809_003",
+      "step": 3,
       "status": "ready",
       "size": 123456789,
       "queued_at": "2026-04-08T09:00:00Z",
@@ -349,6 +350,10 @@
                 <tr>
                   <td><code>folder</code></td>
                   <td>Folder name on disk (<code>YYYYMMDDHH_SSS</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>step</code></td>
+                  <td>Forecast step in hours (0 = model run time equals target time)</td>
                 </tr>
                 <tr>
                   <td><code>status</code></td>
@@ -413,6 +418,16 @@
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
+            <code>/v2/{folder}/log</code>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-0">Returns the raw worker log for the given tile set as plain text. Returns <code>404</code> if no log exists yet (e.g. still pending). <code>{folder}</code> is the <code>YYYYMMDDHH_SSS</code> folder name.</p>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
             <code>/v2/{folder}/tiles/{z}/{x}/{y}.ktx2</code>
             <code class="text-secondary route-alias">· /{folder}/tiles/{z}/{x}/{y}.ktx2</code>
           </div>
@@ -454,6 +469,21 @@
         <p class="text-secondary small">All other paths return <code>403 Forbidden</code>.</p>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Log modal -->
+  <div class="modal fade" id="log-modal" tabindex="-1" aria-labelledby="log-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title font-monospace" id="log-modal-title"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-0">
+          <pre id="log-modal-body" class="p-3 mb-0 small" style="white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto"></pre>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -571,6 +601,11 @@
 
     // --- Tile cache tab ---
 
+    function fmtIdWithStep(id, step) {
+      const base = fmtId(id);
+      return step ? `${base} <span class="text-secondary small">(-${step})</span>` : base;
+    }
+
     function applyTiles(data) {
       const items = data.items || [];
       if (!items.length) {
@@ -579,17 +614,31 @@
       }
       tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
-        <thead><tr><th>Time (UTC)</th><th>Folder</th><th>Status</th><th class="text-end">Proc.</th><th class="text-end">Size</th></tr></thead>
+        <thead><tr><th>Time (UTC)</th><th>Status</th><th class="text-end">Proc.</th><th class="text-end">Size</th></tr></thead>
         <tbody>
           ${items.map(it => `<tr>
-            <td class="text-nowrap">${fmtId(it.id)}</td>
-            <td><code>${it.folder}</code></td>
+            <td class="text-nowrap"><a href="#" class="text-decoration-none link-body-emphasis" onclick="openLog(event,'${it.folder}')">${fmtIdWithStep(it.id, it.step)}</a></td>
             <td>${statusBadge(it.status)}</td>
             <td class="text-end text-nowrap">${it.processing_time != null ? it.processing_time.toFixed(1) + 's' : '—'}</td>
             <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
+    }
+
+    async function openLog(event, folder) {
+      event.preventDefault();
+      document.getElementById('log-modal-title').textContent = folder;
+      const pre = document.getElementById('log-modal-body');
+      pre.textContent = 'Loading…';
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('log-modal'));
+      modal.show();
+      try {
+        const text = await fetch(`./v2/${folder}/log`).then(r => r.text());
+        pre.textContent = text;
+      } catch {
+        pre.textContent = 'Failed to load log.';
+      }
     }
 
     async function fetchTiles() {

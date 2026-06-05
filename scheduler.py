@@ -27,6 +27,7 @@ import time
 import logging
 import config
 import db
+import notify
 from datetime import datetime, timedelta, timezone
 from tilesets import (
     scan_existing_folders,
@@ -63,6 +64,22 @@ def worker_output_reader(process, task_key, log_file_path):
                     pass
 
     process.stdout.close()
+
+
+def _cleanup_failed_dir(output_dir: str):
+    """Delete all contents of a failed job directory except latest.log and invalid marker."""
+    keep = {"latest.log", "invalid"}
+    for item in os.listdir(output_dir):
+        if item in keep:
+            continue
+        item_path = os.path.join(output_dir, item)
+        if os.path.isdir(item_path):
+            shutil.rmtree(item_path, ignore_errors=True)
+        else:
+            try:
+                os.remove(item_path)
+            except OSError:
+                pass
 
 
 def worker_loop():
@@ -144,6 +161,7 @@ def worker_loop():
 
             if process.returncode != 0:
                 logger.error(f"Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
+                _cleanup_failed_dir(output_dir)
                 db.tileset_set_status(folder_name, "failed")
             else:
                 os.remove(invalid_path)
@@ -160,6 +178,7 @@ def worker_loop():
 
         except Exception as e:
             logger.error(f"Error launching worker: {e}")
+            _cleanup_failed_dir(output_dir)
             db.tileset_set_status(folder_name, "failed")
         finally:
             with processing_lock:
@@ -236,13 +255,10 @@ def auto_build_all():
                 # Newer run available — delete the stale pending entry and queue the new one
                 db.tileset_delete(db_entry["folder"])
                 logger.debug(f"AutoBuild: replaced stale pending {db_entry['folder']} with {folder}")
-            elif db_entry["status"] == "failed" and db_entry["folder"] == folder:
-                # Re-attempt same failed run on next maintenance
-                db.tileset_set_status(folder, "pending")
-                queued.append((folder, task_key))
-                added += 1
-                logger.debug(f"AutoBuild: retrying failed {folder} (target {time_id})")
-                continue
+            elif db_entry["status"] == "failed" and db_entry["folder"] != folder:
+                # Better run now available for a previously failed entry — replace it
+                db.tileset_delete(db_entry["folder"])
+                logger.debug(f"AutoBuild: replaced failed {db_entry['folder']} with {folder} (target {time_id})")
 
         inserted = db.tileset_upsert(folder, run_str, best_step, time_id)
         if inserted:
@@ -262,7 +278,6 @@ def purge_old_data():
 
     # Build set of folders currently being fetched or failed in DB — skip purging these
     fetching_folders = {r["folder"] for r in db.tileset_get_all(status="fetching")}
-    failed_folders = {r["folder"] for r in db.tileset_get_all(status="failed")}
 
     purged: list[str] = []
     for entry in scan_existing_folders().values():
@@ -272,7 +287,7 @@ def purge_old_data():
             if (entry["run"].strftime("%Y%m%d%H"), entry["step"]) in task_progress:
                 continue
 
-        if entry["folder"] in fetching_folders or entry["folder"] in failed_folders:
+        if entry["folder"] in fetching_folders:
             continue
 
         if not entry["ready"]:
@@ -308,20 +323,23 @@ def _check_maintenance_completion():
         added   = json.loads(completed["added"])
         purged  = json.loads(completed["purged"])
         renewed = json.loads(completed["renewed"])
+        failed  = db.tileset_get_failed_for_maintenance(row["id"])
         started = datetime.strptime(completed["started_at"], "%Y-%m-%dT%H:%M:%SZ")
         done    = datetime.strptime(completed["completed_at"], "%Y-%m-%dT%H:%M:%SZ")
         elapsed = (done - started).total_seconds() / 60
-        added_str   = ", ".join(added)   or "none"
-        purged_str  = ", ".join(purged)  or "none"
-        renewed_str = ", ".join(renewed) or "none"
         summary = f"{completed['label']} Maintenance completed after {elapsed:.1f} min"
         logger.info(summary)
-        db.log_append(
-            f"{summary}:\n"
-            f" - {len(added)} added ({added_str})\n"
-            f" - {len(purged)} purged ({purged_str})\n"
-            f" - {len(renewed)} renewed ({renewed_str})"
-        )
+        lines = [summary + ":"]
+        if added:   lines.append(f" - {len(added)} added ({', '.join(added)})")
+        if purged:  lines.append(f" - {len(purged)} purged ({', '.join(purged)})")
+        if renewed: lines.append(f" - {len(renewed)} renewed ({', '.join(renewed)})")
+        if failed:
+            lines.append(f" - {len(failed)} failed ({', '.join(failed)})")
+            notify.notify(
+                f"Maintenance failure: {len(failed)} tile set(s) failed",
+                "\n".join(lines),
+            )
+        db.log_append("\n".join(lines))
 
 
 def _run_maintenance(name=None):
@@ -335,15 +353,11 @@ def _run_maintenance(name=None):
             db.tileset_set_maintenance(folder, mid)
         pending_tasks_available.set()
     else:
-        purged_str = ", ".join(purged_folders) or "none"
         summary = f"{label} Maintenance completed after 0.0 min"
         logger.info(summary)
-        db.log_append(
-            f"{summary}:\n"
-            f" - 0 added (none)\n"
-            f" - {len(purged_folders)} purged ({purged_str})\n"
-            f" - 0 renewed (none)"
-        )
+        lines = [summary + ":"]
+        if purged_folders: lines.append(f" - {len(purged_folders)} purged ({', '.join(purged_folders)})")
+        db.log_append("\n".join(lines))
 
 
 def scheduler_loop():

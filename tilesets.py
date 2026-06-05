@@ -309,3 +309,20 @@ def sync_from_disk() -> None:
             # Invalid/incomplete folder with no DB record — discard
             shutil.rmtree(path, ignore_errors=True)
             logger.info(f"sync_from_disk: deleted orphaned invalid folder {folder}")
+
+    # --- Deduplicate: multiple folders sharing the same target_str ---
+    by_target: dict[str, list[dict]] = {}
+    for row in db.tileset_get_all():
+        by_target.setdefault(row["target_str"], []).append(row)
+
+    for target_str, rows in by_target.items():
+        if len(rows) <= 1:
+            continue
+        rows.sort(key=lambda r: r["step"])
+        keep = rows[0]
+        for row in rows[1:]:
+            path = os.path.join(base_dir, row["folder"])
+            if os.path.exists(path):
+                shutil.rmtree(path, ignore_errors=True)
+            db.tileset_delete(row["folder"])
+            logger.info(f"sync_from_disk: removed duplicate {row['folder']} (keeping {keep['folder']} for target {target_str})")

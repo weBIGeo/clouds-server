@@ -25,6 +25,7 @@ import utils.general as util
 import db
 import scheduler
 import tilesets
+import notify
 import routes_v1
 import routes_v2
 from flask import Flask, send_from_directory
@@ -78,6 +79,7 @@ if __name__ == "__main__":
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
+    notify.notify(f"weBIGeo Cloud Server started", f"Server v{VERSION} started on {config.host}:{config.port}")
     tilesets.sync_from_disk()
     if db.tileset_count_pending() > 0:
         scheduler.pending_tasks_available.set()

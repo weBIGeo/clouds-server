@@ -3,3 +3,4 @@ __pycache__
 *.png
 data/
 public-log.json
+config.py
