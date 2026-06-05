@@ -284,3 +284,13 @@ def tileset_count_active_for_maintenance(maintenance_id: int) -> int:
             (maintenance_id,),
         ).fetchone()
     return int(row["cnt"])
+
+
+def tileset_get_failed_for_maintenance(maintenance_id: int) -> list[str]:
+    """Return folder names of failed tilesets linked to a maintenance record."""
+    with _lock:
+        rows = _conn.execute(
+            "SELECT folder FROM tilesets WHERE maintenance_id = ? AND status = 'failed'",
+            (maintenance_id,),
+        ).fetchall()
+    return [r["folder"] for r in rows]

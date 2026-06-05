@@ -27,6 +27,7 @@ import time
 import logging
 import config
 import db
+import notify
 from datetime import datetime, timedelta, timezone
 from tilesets import (
     scan_existing_folders,
@@ -280,7 +281,6 @@ def purge_old_data():
 
     # Build set of folders currently being fetched or failed in DB — skip purging these
     fetching_folders = {r["folder"] for r in db.tileset_get_all(status="fetching")}
-    failed_folders = {r["folder"] for r in db.tileset_get_all(status="failed")}
 
     purged: list[str] = []
     for entry in scan_existing_folders().values():
@@ -290,7 +290,7 @@ def purge_old_data():
             if (entry["run"].strftime("%Y%m%d%H"), entry["step"]) in task_progress:
                 continue
 
-        if entry["folder"] in fetching_folders or entry["folder"] in failed_folders:
+        if entry["folder"] in fetching_folders:
             continue
 
         if not entry["ready"]:
@@ -326,20 +326,23 @@ def _check_maintenance_completion():
         added   = json.loads(completed["added"])
         purged  = json.loads(completed["purged"])
         renewed = json.loads(completed["renewed"])
+        failed  = db.tileset_get_failed_for_maintenance(row["id"])
         started = datetime.strptime(completed["started_at"], "%Y-%m-%dT%H:%M:%SZ")
         done    = datetime.strptime(completed["completed_at"], "%Y-%m-%dT%H:%M:%SZ")
         elapsed = (done - started).total_seconds() / 60
-        added_str   = ", ".join(added)   or "none"
-        purged_str  = ", ".join(purged)  or "none"
-        renewed_str = ", ".join(renewed) or "none"
         summary = f"{completed['label']} Maintenance completed after {elapsed:.1f} min"
         logger.info(summary)
-        db.log_append(
-            f"{summary}:\n"
-            f" - {len(added)} added ({added_str})\n"
-            f" - {len(purged)} purged ({purged_str})\n"
-            f" - {len(renewed)} renewed ({renewed_str})"
-        )
+        lines = [summary + ":"]
+        if added:   lines.append(f" - {len(added)} added ({', '.join(added)})")
+        if purged:  lines.append(f" - {len(purged)} purged ({', '.join(purged)})")
+        if renewed: lines.append(f" - {len(renewed)} renewed ({', '.join(renewed)})")
+        if failed:
+            lines.append(f" - {len(failed)} failed ({', '.join(failed)})")
+            notify.send_mail(
+                f"Maintenance failure: {len(failed)} tile set(s) failed",
+                "\n".join(lines),
+            )
+        db.log_append("\n".join(lines))
 
 
 def _run_maintenance(name=None):
@@ -353,15 +356,11 @@ def _run_maintenance(name=None):
             db.tileset_set_maintenance(folder, mid)
         pending_tasks_available.set()
     else:
-        purged_str = ", ".join(purged_folders) or "none"
         summary = f"{label} Maintenance completed after 0.0 min"
         logger.info(summary)
-        db.log_append(
-            f"{summary}:\n"
-            f" - 0 added (none)\n"
-            f" - {len(purged_folders)} purged ({purged_str})\n"
-            f" - 0 renewed (none)"
-        )
+        lines = [summary + ":"]
+        if purged_folders: lines.append(f" - {len(purged_folders)} purged ({', '.join(purged_folders)})")
+        db.log_append("\n".join(lines))
 
 
 def scheduler_loop():

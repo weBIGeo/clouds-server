@@ -25,6 +25,7 @@ import utils.general as util
 import db
 import scheduler
 import tilesets
+import notify
 import routes_v1
 import routes_v2
 from flask import Flask, send_from_directory
@@ -73,6 +74,7 @@ if __name__ == "__main__":
     log_config.print_logo()
     db.init(config.db_path)
     db.log_append(f"Server started v{VERSION}")
+    notify.send_mail(f"weBIGeo Cloud Server started", f"Server v{VERSION} started on {config.host}:{config.port}")
     msg = f" === weBIGeo Cloud Server v{VERSION} started === "
     sep = " " + "=" * (len(msg) - 2) + " "
     logger.info(sep)
