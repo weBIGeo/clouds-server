@@ -56,6 +56,7 @@ def list_tilesets():
         {
             "id": r["target_str"],
             "folder": r["folder"],
+            "step": r["step"],
             "status": r["status"],
             "size": r["size"],
             "queued_at": r["queued_at"],
@@ -75,6 +76,17 @@ def get_log():
     except (ValueError, TypeError):
         since = 7 * 24 * 3600
     return jsonify({"entries": db.log_read_since(since)})
+
+
+@bp.route("/<folder>/log")
+def serve_folder_log(folder):
+    if not re.match(r"^\d{10}_\d{3}$", folder):
+        return ("Forbidden", 403)
+    log_path = os.path.join(os.path.abspath(config.tileset_cache_dir), folder, "latest.log")
+    if not os.path.exists(log_path):
+        return ("No log available.", 404)
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        return f.read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @bp.route("/<path:filename>")
