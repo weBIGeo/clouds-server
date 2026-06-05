@@ -65,6 +65,22 @@ def worker_output_reader(process, task_key, log_file_path):
     process.stdout.close()
 
 
+def _cleanup_failed_dir(output_dir: str):
+    """Delete all contents of a failed job directory except latest.log and invalid marker."""
+    keep = {"latest.log", "invalid"}
+    for item in os.listdir(output_dir):
+        if item in keep:
+            continue
+        item_path = os.path.join(output_dir, item)
+        if os.path.isdir(item_path):
+            shutil.rmtree(item_path, ignore_errors=True)
+        else:
+            try:
+                os.remove(item_path)
+            except OSError:
+                pass
+
+
 def worker_loop():
     while True:
         pending_tasks_available.wait()
@@ -144,6 +160,7 @@ def worker_loop():
 
             if process.returncode != 0:
                 logger.error(f"Worker for {task_key} failed (exit {process.returncode}). See {log_path}")
+                _cleanup_failed_dir(output_dir)
                 db.tileset_set_status(folder_name, "failed")
             else:
                 os.remove(invalid_path)
@@ -160,6 +177,7 @@ def worker_loop():
 
         except Exception as e:
             logger.error(f"Error launching worker: {e}")
+            _cleanup_failed_dir(output_dir)
             db.tileset_set_status(folder_name, "failed")
         finally:
             with processing_lock:
