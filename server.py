@@ -74,12 +74,12 @@ if __name__ == "__main__":
     log_config.print_logo()
     db.init(config.db_path)
     db.log_append(f"Server started v{VERSION}")
-    notify.send_mail(f"weBIGeo Cloud Server started", f"Server v{VERSION} started on {config.host}:{config.port}")
     msg = f" === weBIGeo Cloud Server v{VERSION} started === "
     sep = " " + "=" * (len(msg) - 2) + " "
     logger.info(sep)
     logger.info(msg)
     logger.info(sep)
+    notify.notify(f"weBIGeo Cloud Server started", f"Server v{VERSION} started on {config.host}:{config.port}")
     tilesets.sync_from_disk()
     if db.tileset_count_pending() > 0:
         scheduler.pending_tasks_available.set()

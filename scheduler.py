@@ -335,7 +335,7 @@ def _check_maintenance_completion():
         if renewed: lines.append(f" - {len(renewed)} renewed ({', '.join(renewed)})")
         if failed:
             lines.append(f" - {len(failed)} failed ({', '.join(failed)})")
-            notify.send_mail(
+            notify.notify(
                 f"Maintenance failure: {len(failed)} tile set(s) failed",
                 "\n".join(lines),
             )
