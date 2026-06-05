@@ -255,13 +255,10 @@ def auto_build_all():
                 # Newer run available — delete the stale pending entry and queue the new one
                 db.tileset_delete(db_entry["folder"])
                 logger.debug(f"AutoBuild: replaced stale pending {db_entry['folder']} with {folder}")
-            elif db_entry["status"] == "failed" and db_entry["folder"] == folder:
-                # Re-attempt same failed run on next maintenance
-                db.tileset_set_status(folder, "pending")
-                queued.append((folder, task_key))
-                added += 1
-                logger.debug(f"AutoBuild: retrying failed {folder} (target {time_id})")
-                continue
+            elif db_entry["status"] == "failed" and db_entry["folder"] != folder:
+                # Better run now available for a previously failed entry — replace it
+                db.tileset_delete(db_entry["folder"])
+                logger.debug(f"AutoBuild: replaced failed {db_entry['folder']} with {folder} (target {time_id})")
 
         inserted = db.tileset_upsert(folder, run_str, best_step, time_id)
         if inserted:
