@@ -51,6 +51,59 @@
       word-break: break-word;
     }
 
+    /* --- Worker log viewer --- */
+    #log-modal .modal-dialog {
+      max-width: 96vw;
+    }
+
+    #log-modal-body {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: .78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 78vh;
+      overflow: auto;
+      background: var(--bs-tertiary-bg);
+      tab-size: 4;
+    }
+
+    /* Colors mirror the ANSI palette the server uses for its own console output. */
+    :root {
+      --ll-ts: #6c757d;
+      --ll-src: #6f42c1;
+      --ll-dim: #8c959d;
+      --ll-dur: #198754;
+      --ll-debug: #0aa2c0;
+      --ll-info: #0d6efd;
+      --ll-warning: #b58100;
+      --ll-error: #dc3545;
+      --ll-critical: #b02a37;
+    }
+
+    [data-bs-theme="dark"] {
+      --ll-ts: #8b949e;
+      --ll-src: #c39ff5;
+      --ll-dim: #8b949e;
+      --ll-dur: #3fb950;
+      --ll-debug: #56d4dd;
+      --ll-info: #6ea8fe;
+      --ll-warning: #ffc107;
+      --ll-error: #ff7b72;
+      --ll-critical: #ff4d4f;
+    }
+
+    .ll-ts { color: var(--ll-ts); }
+    .ll-src { color: var(--ll-src); }
+    .ll-dim { color: var(--ll-dim); }
+    .ll-dur { color: var(--ll-dur); }
+    .ll-debug { color: var(--ll-debug); }
+    .ll-info { color: var(--ll-info); }
+    .ll-warning { color: var(--ll-warning); }
+    .ll-error { color: var(--ll-error); }
+    .ll-critical { color: var(--ll-critical); font-weight: 600; }
+    .ll-raw { color: var(--ll-error); }
+
     .status-card {
       border: 1px solid rgba(255, 255, 255, 0.4);
       background: rgba(0, 0, 0, 0.2);
@@ -487,14 +540,18 @@
 
   <!-- Log modal -->
   <div class="modal fade" id="log-modal" tabindex="-1" aria-labelledby="log-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title font-monospace" id="log-modal-title"></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="form-check form-switch small text-secondary ms-auto me-3 mb-0">
+            <input class="form-check-input" type="checkbox" id="log-hide-progress" checked>
+            <label class="form-check-label" for="log-hide-progress">Hide progress lines</label>
+          </div>
+          <button type="button" class="btn-close m-0" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-0">
-          <pre id="log-modal-body" class="p-3 mb-0 small" style="white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto"></pre>
+          <pre id="log-modal-body" class="p-3 mb-0"></pre>
         </div>
       </div>
     </div>
@@ -716,10 +773,51 @@
       </table>`;
     }
 
+    // Worker logs use the server's own formatter (see log_config.py):
+    //   2026-04-08 09:15:42 | Info     | tile_processor.py:123     | message
+    // Everything else is either a PROGRESS:: control line the scheduler writes through to the
+    // file, or raw stderr — a traceback, or the continuation lines of a multi-line message.
+    const LOG_LINE_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \| (\w+) *\| ([^|]*?) *\| ([\s\S]*)$/;
+    const LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'critical'];
+    const LL_SEP = '<span class="ll-dim"> | </span>';
+
+    let lastLogText = null;
+
+    function formatLogLine(line) {
+      if (line.startsWith('PROGRESS::')) {
+        const [, stage = '', detail = '', pct = ''] = line.split('::');
+        const text = `${' '.repeat(19)} | progress | ${stage.padEnd(25)} | ${detail}${pct ? ` (${pct}%)` : ''}`;
+        return `<span class="ll-dim">${escapeHtml(text)}</span>`;
+      }
+      const m = line.match(LOG_LINE_RE);
+      if (!m) return line ? `<span class="ll-raw">${escapeHtml(line)}</span>` : '';
+      const [, ts, level, src, msg] = m;
+      const key = level.toLowerCase();
+      const lvlCls = LOG_LEVELS.includes(key) ? `ll-${key}` : 'll-info';
+      // Durations are what the timings parser keys off, so make them stand out.
+      const body = escapeHtml(msg).replace(/\b(\d+(?:\.\d+)?)(s|ms|min)\b/g, '<span class="ll-dur">$1$2</span>');
+      return `<span class="ll-ts">${ts}</span>${LL_SEP}<span class="${lvlCls}">${escapeHtml(level.padEnd(8))}</span>`
+        + `${LL_SEP}<span class="ll-src">${escapeHtml(src.padEnd(25))}</span>${LL_SEP}`
+        + (key === 'debug' ? `<span class="ll-dim">${body}</span>` : body);
+    }
+
+    function renderLog() {
+      if (lastLogText === null) return;
+      const pre = document.getElementById('log-modal-body');
+      let lines = lastLogText.replace(/\s+$/, '').split(/\r?\n/);
+      if (document.getElementById('log-hide-progress').checked) {
+        lines = lines.filter(l => !l.startsWith('PROGRESS::'));
+      }
+      pre.innerHTML = lines.length ? lines.map(formatLogLine).join('\n') : '<span class="ll-dim">(empty)</span>';
+    }
+
+    document.getElementById('log-hide-progress').addEventListener('change', renderLog);
+
     async function openLog(event, folder) {
       event.preventDefault();
       document.getElementById('log-modal-title').textContent = folder;
       const pre = document.getElementById('log-modal-body');
+      lastLogText = null;
       pre.textContent = 'Loading…';
       const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('log-modal'));
       modal.show();
@@ -731,7 +829,8 @@
         } else if (res.status === 404) {
           pre.textContent = 'No log available yet.';
         } else {
-          pre.textContent = await res.text();
+          lastLogText = await res.text();
+          renderLog();
         }
       } catch {
         pre.textContent = 'Failed to load log.';
