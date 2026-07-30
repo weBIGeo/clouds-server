@@ -16,8 +16,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
+import hmac
 import os
 import re
+from functools import wraps
 import config
 import db
 import scheduler
@@ -27,6 +29,22 @@ from flask import Blueprint, jsonify, request, send_from_directory
 bp = Blueprint("v2", __name__, url_prefix="/v2")
 
 VERSION = util.read_version()
+
+
+def require_token(fn):
+    """Gate an endpoint behind config.log_access_token, passed as an X-Auth-Token header.
+
+    Fails closed: if no token is configured the endpoint is disabled entirely. getattr is
+    used because config.py is gitignored, so older deployments won't have the setting yet.
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        expected = getattr(config, "log_access_token", "") or ""
+        provided = request.headers.get("X-Auth-Token", "")
+        if not expected or not hmac.compare_digest(provided, expected):
+            return ("Forbidden", 403)
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 @bp.route("/status")
@@ -79,6 +97,7 @@ def get_log():
 
 
 @bp.route("/<folder>/log")
+@require_token
 def serve_folder_log(folder):
     if not re.match(r"^\d{10}_\d{3}$", folder):
         return ("Forbidden", 403)
@@ -86,7 +105,10 @@ def serve_folder_log(folder):
     if not os.path.exists(log_path):
         return ("No log available.", 404)
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-        return f.read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
+        return f.read(), 200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store",
+        }
 
 
 @bp.route("/<path:filename>")

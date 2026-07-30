@@ -51,6 +51,59 @@
       word-break: break-word;
     }
 
+    /* --- Worker log viewer --- */
+    #log-modal .modal-dialog {
+      max-width: 96vw;
+    }
+
+    #log-modal-body {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: .78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 78vh;
+      overflow: auto;
+      background: var(--bs-tertiary-bg);
+      tab-size: 4;
+    }
+
+    /* Colors mirror the ANSI palette the server uses for its own console output. */
+    :root {
+      --ll-ts: #6c757d;
+      --ll-src: #6f42c1;
+      --ll-dim: #8c959d;
+      --ll-dur: #198754;
+      --ll-debug: #0aa2c0;
+      --ll-info: #0d6efd;
+      --ll-warning: #b58100;
+      --ll-error: #dc3545;
+      --ll-critical: #b02a37;
+    }
+
+    [data-bs-theme="dark"] {
+      --ll-ts: #8b949e;
+      --ll-src: #c39ff5;
+      --ll-dim: #8b949e;
+      --ll-dur: #3fb950;
+      --ll-debug: #56d4dd;
+      --ll-info: #6ea8fe;
+      --ll-warning: #ffc107;
+      --ll-error: #ff7b72;
+      --ll-critical: #ff4d4f;
+    }
+
+    .ll-ts { color: var(--ll-ts); }
+    .ll-src { color: var(--ll-src); }
+    .ll-dim { color: var(--ll-dim); }
+    .ll-dur { color: var(--ll-dur); }
+    .ll-debug { color: var(--ll-debug); }
+    .ll-info { color: var(--ll-info); }
+    .ll-warning { color: var(--ll-warning); }
+    .ll-error { color: var(--ll-error); }
+    .ll-critical { color: var(--ll-critical); font-weight: 600; }
+    .ll-raw { color: var(--ll-error); }
+
     .status-card {
       border: 1px solid rgba(255, 255, 255, 0.4);
       background: rgba(0, 0, 0, 0.2);
@@ -154,6 +207,8 @@
       <span style="font-size:1.8rem">☁️</span>
       <h1 class="fs-4 fw-semibold mb-0">weBIGeo Cloud Server</h1>
       <span class="badge rounded-pill text-bg-primary ms-1" id="version-badge">…</span>
+      <button class="btn btn-sm btn-link text-decoration-none ms-auto" id="auth-btn"
+        title="Enter access key to view worker logs">🔒</button>
     </div>
 
     <!-- === STATUS === -->
@@ -233,6 +288,16 @@
       <!-- === API === -->
       <div class="tab-pane fade" id="tab-api" role="tabpanel">
         <p class="text-secondary small mb-3">All time values use the format <code>YYYYMMDDHH</code> (UTC).</p>
+
+        <div class="border rounded p-3 mb-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge text-bg-secondary" style="font-size:.7rem">🔒 key required</span>
+            <span class="small fw-semibold">Authentication</span>
+          </div>
+          <p class="text-secondary small mb-0">Endpoints marked with this badge expect the server's access key in an
+            <code>X-Auth-Token</code> header and return <code>403 Forbidden</code> without it.
+          </p>
+        </div>
 
         <div class="card mb-3">
           <div class="card-header d-flex align-items-center gap-2">
@@ -419,6 +484,7 @@
           <div class="card-header d-flex align-items-center gap-2">
             <span class="badge text-bg-success" style="font-size:.7rem;letter-spacing:.05em">GET</span>
             <code>/v2/{folder}/log</code>
+            <span class="badge text-bg-secondary ms-auto" style="font-size:.7rem">🔒 key required</span>
           </div>
           <div class="card-body">
             <p class="text-secondary small mb-0">Returns the raw worker log for the given tile set as plain text. Returns <code>404</code> if no log exists yet (e.g. still pending). <code>{folder}</code> is the <code>YYYYMMDDHH_SSS</code> folder name.</p>
@@ -474,14 +540,39 @@
 
   <!-- Log modal -->
   <div class="modal fade" id="log-modal" tabindex="-1" aria-labelledby="log-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title font-monospace" id="log-modal-title"></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="form-check form-switch small text-secondary ms-auto me-3 mb-0">
+            <input class="form-check-input" type="checkbox" id="log-hide-progress" checked>
+            <label class="form-check-label" for="log-hide-progress">Hide progress lines</label>
+          </div>
+          <button type="button" class="btn-close m-0" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-0">
-          <pre id="log-modal-body" class="p-3 mb-0 small" style="white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto"></pre>
+          <pre id="log-modal-body" class="p-3 mb-0"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Access key modal -->
+  <div class="modal fade" id="auth-modal" tabindex="-1" aria-labelledby="auth-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="auth-modal-title">Access Key</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary small">Worker logs are only available with the access key configured on the
+            server. The key is kept for this browser tab only.</p>
+          <input type="password" class="form-control" id="auth-input" autocomplete="off" placeholder="Access key">
+          <div class="text-danger small mt-2" id="auth-error" style="display:none">Invalid key.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="auth-submit">Unlock</button>
         </div>
       </div>
     </div>
@@ -501,6 +592,7 @@
     const tileEntries = document.getElementById('tile-entries');
 
     let nextMaintenanceTime = null;
+    let authToken = sessionStorage.getItem('logToken') || null;
 
     function escapeHtml(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -599,6 +691,54 @@
       } catch { }
     }
 
+    // --- Access key ---
+
+    // A well-formed folder name that can never exist (year 0000). Requesting its log validates
+    // a key against the real endpoint: 403 means the key was rejected, 404 means it got through.
+    const PROBE_FOLDER = '0000000000_000';
+
+    const authBtn = document.getElementById('auth-btn');
+    const authInput = document.getElementById('auth-input');
+    const authError = document.getElementById('auth-error');
+
+    async function probeToken(key) {
+      try {
+        const res = await fetch(`./v2/${PROBE_FOLDER}/log`, { headers: { 'X-Auth-Token': key } });
+        return res.status !== 403;
+      } catch { return false; }
+    }
+
+    function setAuth(token) {
+      authToken = token;
+      if (token) sessionStorage.setItem('logToken', token);
+      else sessionStorage.removeItem('logToken');
+      authBtn.textContent = token ? '🔓' : '🔒';
+      authBtn.title = token ? 'Click to lock again' : 'Enter access key to view worker logs';
+      if (lastTilesData) applyTiles(lastTilesData);
+    }
+
+    async function submitAuth() {
+      const key = authInput.value.trim();
+      if (!key) return;
+      authError.style.display = 'none';
+      if (await probeToken(key)) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('auth-modal')).hide();
+        authInput.value = '';
+        setAuth(key);
+      } else {
+        authError.style.display = 'block';
+      }
+    }
+
+    authBtn.addEventListener('click', () => {
+      if (authToken) { setAuth(null); return; }
+      authInput.value = '';
+      authError.style.display = 'none';
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('auth-modal')).show();
+    });
+    document.getElementById('auth-submit').addEventListener('click', submitAuth);
+    authInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+
     // --- Tile cache tab ---
 
     function fmtIdWithStep(id, step) {
@@ -606,18 +746,25 @@
       return step ? `${base} <span class="text-secondary small">(-${step})</span>` : base;
     }
 
+    let lastTilesData = null;
+
     function applyTiles(data) {
+      lastTilesData = data;
       const items = data.items || [];
       if (!items.length) {
         tileEntries.innerHTML = '<div class="text-secondary small py-2">No tile sets found.</div>';
         return;
       }
+      // Worker logs need the access key, so without it the ids render as plain text.
+      const idCell = it => authToken
+        ? `<a href="#" class="text-decoration-none link-body-emphasis" onclick="openLog(event,'${it.folder}')">${fmtIdWithStep(it.id, it.step)}</a>`
+        : fmtIdWithStep(it.id, it.step);
       tileEntries.innerHTML = `
       <table class="table table-sm table-striped small mb-0">
         <thead><tr><th>Time (UTC)</th><th>Status</th><th class="text-end">Proc.</th><th class="text-end">Size</th></tr></thead>
         <tbody>
           ${items.map(it => `<tr>
-            <td class="text-nowrap"><a href="#" class="text-decoration-none link-body-emphasis" onclick="openLog(event,'${it.folder}')">${fmtIdWithStep(it.id, it.step)}</a></td>
+            <td class="text-nowrap">${idCell(it)}</td>
             <td>${statusBadge(it.status)}</td>
             <td class="text-end text-nowrap">${it.processing_time != null ? it.processing_time.toFixed(1) + 's' : '—'}</td>
             <td class="text-end text-nowrap">${fmtBytes(it.size)}</td>
@@ -626,23 +773,71 @@
       </table>`;
     }
 
+    // Worker logs use the server's own formatter (see log_config.py):
+    //   2026-04-08 09:15:42 | Info     | tile_processor.py:123     | message
+    // Everything else is either a PROGRESS:: control line the scheduler writes through to the
+    // file, or raw stderr — a traceback, or the continuation lines of a multi-line message.
+    const LOG_LINE_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \| (\w+) *\| ([^|]*?) *\| ([\s\S]*)$/;
+    const LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'critical'];
+    const LL_SEP = '<span class="ll-dim"> | </span>';
+
+    let lastLogText = null;
+
+    function formatLogLine(line) {
+      if (line.startsWith('PROGRESS::')) {
+        const [, stage = '', detail = '', pct = ''] = line.split('::');
+        const text = `${' '.repeat(19)} | progress | ${stage.padEnd(25)} | ${detail}${pct ? ` (${pct}%)` : ''}`;
+        return `<span class="ll-dim">${escapeHtml(text)}</span>`;
+      }
+      const m = line.match(LOG_LINE_RE);
+      if (!m) return line ? `<span class="ll-raw">${escapeHtml(line)}</span>` : '';
+      const [, ts, level, src, msg] = m;
+      const key = level.toLowerCase();
+      const lvlCls = LOG_LEVELS.includes(key) ? `ll-${key}` : 'll-info';
+      // Durations are what the timings parser keys off, so make them stand out.
+      const body = escapeHtml(msg).replace(/\b(\d+(?:\.\d+)?)(s|ms|min)\b/g, '<span class="ll-dur">$1$2</span>');
+      return `<span class="ll-ts">${ts}</span>${LL_SEP}<span class="${lvlCls}">${escapeHtml(level.padEnd(8))}</span>`
+        + `${LL_SEP}<span class="ll-src">${escapeHtml(src.padEnd(25))}</span>${LL_SEP}`
+        + (key === 'debug' ? `<span class="ll-dim">${body}</span>` : body);
+    }
+
+    function renderLog() {
+      if (lastLogText === null) return;
+      const pre = document.getElementById('log-modal-body');
+      let lines = lastLogText.replace(/\s+$/, '').split(/\r?\n/);
+      if (document.getElementById('log-hide-progress').checked) {
+        lines = lines.filter(l => !l.startsWith('PROGRESS::'));
+      }
+      pre.innerHTML = lines.length ? lines.map(formatLogLine).join('\n') : '<span class="ll-dim">(empty)</span>';
+    }
+
+    document.getElementById('log-hide-progress').addEventListener('change', renderLog);
+
     async function openLog(event, folder) {
       event.preventDefault();
       document.getElementById('log-modal-title').textContent = folder;
       const pre = document.getElementById('log-modal-body');
+      lastLogText = null;
       pre.textContent = 'Loading…';
       const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('log-modal'));
       modal.show();
       try {
-        const text = await fetch(`./v2/${folder}/log`).then(r => r.text());
-        pre.textContent = text;
+        const res = await fetch(`./v2/${folder}/log`, { headers: { 'X-Auth-Token': authToken || '' } });
+        if (res.status === 403) {
+          pre.textContent = 'Not authorized — the access key was rejected.';
+          setAuth(null);
+        } else if (res.status === 404) {
+          pre.textContent = 'No log available yet.';
+        } else {
+          lastLogText = await res.text();
+          renderLog();
+        }
       } catch {
         pre.textContent = 'Failed to load log.';
       }
     }
 
     async function fetchTiles() {
-      tileEntries.innerHTML = '<div class="text-secondary small py-2">Loading…</div>';
       try {
         const data = await fetch('./tilesets').then(r => r.json());
         applyTiles(data);
@@ -680,6 +875,9 @@
     }
 
     async function init() {
+      // A stored key may have been rotated on the server since it was entered.
+      if (authToken && !(await probeToken(authToken))) authToken = null;
+      setAuth(authToken);
       try {
         const data = await fetch('./status').then(r => r.json());
         if (data.version) {

@@ -18,6 +18,7 @@
 
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 import sys
 import config
 
@@ -124,6 +125,9 @@ def setup_logging(log_file: str | None = None) -> None:
     root.addHandler(console_handler)
 
     if log_file and log_file != "":
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=config.log_file_max_bytes,

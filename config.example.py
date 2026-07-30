@@ -56,6 +56,12 @@ log_level_overrides = {
     "numba":    "WARNING",
 }
 
+# Access key for the per-tileset worker log endpoint (/v2/{folder}/log).
+# Those logs expose internal paths and hostnames, so the endpoint is disabled entirely
+# unless a key is set here. Enter it via the lock button in the web dashboard.
+# Generate one with:  python -c "import secrets; print(secrets.token_urlsafe(32))"
+log_access_token = ""
+
 # If True, downloaded GRIB files are kept on disk after processing.
 # NOTE: Use only for debug purposes. Those files are very large
 keep_gribs = False
@@ -111,14 +117,6 @@ run_maintenance_on_startup = True
 # When True, no new tiles are fetched or generated and no old tiles are purged.
 # Only tiles that already exist on disk will be served.
 only_serve = False
-
-# Email notifications. Leave smtp_host or notify_email empty/None to disable.
-# Gmail: smtp_host="smtp.gmail.com", smtp_password=<app password from myaccount.google.com/apppasswords>
-notify_email  = ""   # recipient address
-smtp_host     = ""   # e.g. "smtp.gmail.com"
-smtp_port     = 587
-smtp_user     = ""   # sender login (usually same as notify_email)
-smtp_password = ""
 
 # ntfy.sh push notifications. Set ntfy_topic to enable (pick an unguessable name).
 # Install the ntfy app and subscribe to the same topic to receive push notifications.
