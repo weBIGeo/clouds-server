@@ -112,14 +112,6 @@ run_maintenance_on_startup = True
 # Only tiles that already exist on disk will be served.
 only_serve = False
 
-# Email notifications. Leave smtp_host or notify_email empty/None to disable.
-# Gmail: smtp_host="smtp.gmail.com", smtp_password=<app password from myaccount.google.com/apppasswords>
-notify_email  = ""   # recipient address
-smtp_host     = ""   # e.g. "smtp.gmail.com"
-smtp_port     = 587
-smtp_user     = ""   # sender login (usually same as notify_email)
-smtp_password = ""
-
 # ntfy.sh push notifications. Set ntfy_topic to enable (pick an unguessable name).
 # Install the ntfy app and subscribe to the same topic to receive push notifications.
 ntfy_topic  = "" # e.g. "webigeo-clouds-abc123"
