@@ -56,6 +56,12 @@ log_level_overrides = {
     "numba":    "WARNING",
 }
 
+# Access key for the per-tileset worker log endpoint (/v2/{folder}/log).
+# Those logs expose internal paths and hostnames, so the endpoint is disabled entirely
+# unless a key is set here. Enter it via the lock button in the web dashboard.
+# Generate one with:  python -c "import secrets; print(secrets.token_urlsafe(32))"
+log_access_token = ""
+
 # If True, downloaded GRIB files are kept on disk after processing.
 # NOTE: Use only for debug purposes. Those files are very large
 keep_gribs = False
